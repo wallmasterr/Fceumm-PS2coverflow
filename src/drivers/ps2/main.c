@@ -542,6 +542,8 @@ GSTEXTURE MENU_TEX;
 u8 menutex = 0;
 u8 bgtex = 0;
 
+static int autorom_boot_attempted = 0;
+
 extern GSGLOBAL *gsGlobal;
 //unsigned int ps2palette[256];
 /* Normal loopy palette
@@ -586,6 +588,8 @@ extern void Set_NESInput();
 extern  int Get_NESInput();
 
 static  int PS2_LoadGame(char *path);
+static void build_auto_rom_path(char *dest, size_t destsz, const char *boot_path);
+static int  auto_rom_file_exists(const char *rom_path);
 static void SetupNESTexture();
        void SetupNESClut();
        void SetupNESGS();
@@ -756,7 +760,14 @@ int main(int argc, char *argv[])
 
     // Main emulation loop
     for (;;) {
-        strcpy((char *)path, Browser(1, 0));
+        if (!autorom_boot_attempted) {
+            autorom_boot_attempted = 1;
+            build_auto_rom_path((char *)path, 4096, boot_path);
+            if (!auto_rom_file_exists((char *)path))
+                strcpy((char *)path, Browser(1, 0));
+        } else {
+            strcpy((char *)path, Browser(1, 0));
+        }
 
         if (PS2_LoadGame((char *)path) == 0) {
             continue;
@@ -778,6 +789,37 @@ int main(int argc, char *argv[])
     }
 
     return 0;
+}
+
+static void build_auto_rom_path(char *dest, size_t destsz, const char *boot_path)
+{
+    size_t n;
+
+    if (!dest || destsz == 0)
+        return;
+    dest[0] = '\0';
+    if (!boot_path)
+        return;
+    n = strlen(boot_path);
+    if (n == 0)
+        return;
+    if (boot_path[n - 1] != '/' && boot_path[n - 1] != '\\')
+        snprintf(dest, destsz, "%s/rom/game.nes", boot_path);
+    else
+        snprintf(dest, destsz, "%srom/game.nes", boot_path);
+}
+
+static int auto_rom_file_exists(const char *rom_path)
+{
+    FILE *f;
+
+    if (!rom_path || !rom_path[0])
+        return 0;
+    f = fopen(rom_path, "rb");
+    if (!f)
+        return 0;
+    fclose(f);
+    return 1;
 }
 
 static int PS2_LoadGame(char *path)
