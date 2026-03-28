@@ -1,0 +1,2 @@
+*.sh text eol=lf
+wsl-ps2env.sh.example text eol=lf

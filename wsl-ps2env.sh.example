@@ -1,0 +1,13 @@
+# Copy this file to wsl-ps2env.sh and adjust paths (wsl-ps2env.sh is gitignored).
+#
+# PS2SDK must be the install prefix that contains samples/Makefile.eeglobal
+# (created when ps2sdk is installed — not only the git clone).
+# If that file is missing but Makefile.eeglobal_sample exists, run from ps2sdk
+# sources:  make release-samples   (with PS2SDK pointing at the same prefix).
+#
+# Many installs use PS2DEV and PS2SDK together, e.g.:
+#   export PS2DEV="$HOME/ps2dev"
+#   export PS2SDK="$PS2DEV/ps2sdk"
+
+export PS2SDK="${PS2SDK:-$HOME/ps2dev/ps2sdk}"
+export GSKIT="${GSKIT:-$HOME/ps2dev/gsKit}"

@@ -9,3 +9,6 @@
 
 # Generated
 /src/drivers/ps2/irx/*.c
+
+# Local WSL PS2 paths (copy from wsl-ps2env.sh.example)
+wsl-ps2env.sh
