@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <malloc.h>
+#include <sys/stat.h>
 
 // FCEUltra headers
 #include "../../driver.h"
@@ -763,6 +764,10 @@ int main(int argc, char *argv[])
             continue;
         }
 
+#ifdef SOUND_ON
+        /* Clear audsrv queue after load so the first emulated frames are not mixed with stale data. */
+        audsrv_stop_audio();
+#endif
         Set_NESInput();
         SetupNESClut();
         SetupNESGS();
@@ -869,15 +874,15 @@ static void print_auto_rom_diagnostics(const char *argv0, const char *boot_path)
 
 static int auto_rom_file_exists(const char *rom_path)
 {
-    FILE *f;
+    struct stat st;
 
+    /* Use stat, not fopen — avoids opening the ROM twice before FCEUI_LoadGame
+     * (stdio + core loader); on PS2 that can contribute to audio glitching. */
     if (!rom_path || !rom_path[0])
         return 0;
-    f = fopen(rom_path, "rb");
-    if (!f)
+    if (stat(rom_path, &st) != 0)
         return 0;
-    fclose(f);
-    return 1;
+    return S_ISREG(st.st_mode);
 }
 
 static int PS2_LoadGame(char *path)
@@ -1128,6 +1133,8 @@ static void SND_Init()
     format.channels = 1;
     audsrv_set_format(&format);
     audsrv_set_volume(MAX_VOLUME);
+    /* Flush any garbage in the driver before first frame (autoload skips browser/menu). */
+    audsrv_stop_audio();
 #endif
 }
 
