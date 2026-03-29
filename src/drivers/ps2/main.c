@@ -544,6 +544,14 @@ u8 bgtex = 0;
 
 static int autorom_boot_attempted = 0;
 
+/* Relative to ELF directory (boot_path), tried in order */
+static const char *const auto_rom_relpaths[] = {
+    "game.nes",
+    "rom/game.nes",
+    "roms/game.nes",
+    NULL
+};
+
 extern GSGLOBAL *gsGlobal;
 //unsigned int ps2palette[256];
 /* Normal loopy palette
@@ -590,6 +598,7 @@ extern  int Get_NESInput();
 static  int PS2_LoadGame(char *path);
 static int  pick_auto_rom_path(char *dest, size_t destsz, const char *boot_path);
 static int  auto_rom_file_exists(const char *rom_path);
+static void print_auto_rom_diagnostics(const char *argv0, const char *boot_path);
 static void SetupNESTexture();
        void SetupNESClut();
        void SetupNESGS();
@@ -739,8 +748,10 @@ int main(int argc, char *argv[])
     for (;;) {
         if (!autorom_boot_attempted) {
             autorom_boot_attempted = 1;
-            if (!pick_auto_rom_path((char *)path, 4096, boot_path))
+            if (!pick_auto_rom_path((char *)path, 4096, boot_path)) {
+                print_auto_rom_diagnostics(argv[0], boot_path);
                 strcpy((char *)path, Browser(1, 0));
+            }
         } else {
             strcpy((char *)path, Browser(1, 0));
         }
@@ -767,14 +778,9 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-/* Tries rom/game.nes then roms/game.nes (same folder as ELF). Returns 1 if found. */
+/* Tries game.nes next to ELF, then rom/ and roms/. Returns 1 if found. */
 static int pick_auto_rom_path(char *dest, size_t destsz, const char *boot_path)
 {
-    static const char *const rels[] = {
-        "rom/game.nes",
-        "roms/game.nes",
-        NULL
-    };
     size_t n;
     int trail;
     const char *const *rp;
@@ -789,7 +795,7 @@ static int pick_auto_rom_path(char *dest, size_t destsz, const char *boot_path)
         return 0;
     trail = (boot_path[n - 1] == '/' || boot_path[n - 1] == '\\');
 
-    for (rp = rels; *rp; rp++) {
+    for (rp = auto_rom_relpaths; *rp; rp++) {
         if (!trail)
             snprintf(dest, destsz, "%s/%s", boot_path, *rp);
         else
@@ -797,12 +803,65 @@ static int pick_auto_rom_path(char *dest, size_t destsz, const char *boot_path)
         if (auto_rom_file_exists(dest))
             return 1;
     }
-    /* Prefer roms/ as default path when opening browser after failed auto-load */
+    /* Default path shown in browser after failed auto-load: same dir as ELF */
     if (!trail)
-        snprintf(dest, destsz, "%s/roms/game.nes", boot_path);
+        snprintf(dest, destsz, "%s/game.nes", boot_path);
     else
-        snprintf(dest, destsz, "%sroms/game.nes", boot_path);
+        snprintf(dest, destsz, "%sgame.nes", boot_path);
     return 0;
+}
+
+static void print_auto_rom_diagnostics(const char *argv0, const char *boot_path)
+{
+    char trial[512];
+    char line[80];
+    size_t n;
+    int trail;
+    const char *const *rp;
+    u64 tc;
+    int i, spin;
+
+    printf("\n========== AUTOLOAD: game.nes not found ==========\n");
+    printf("argv[0] (launch path): \"%s\"\n", argv0 ? argv0 : "(null)");
+    printf("boot_path (ELF folder): \"%s\"\n", boot_path && boot_path[0] ? boot_path : "(empty)");
+    if (!boot_path || !boot_path[0]) {
+        printf("(fix: launcher may not pass a path; try running from mass/hdd with full path)\n");
+        printf("===================================================\n\n");
+        return;
+    }
+    n = strlen(boot_path);
+    trail = (boot_path[n - 1] == '/' || boot_path[n - 1] == '\\');
+    printf("fopen tried (must open for read):\n");
+    for (rp = auto_rom_relpaths; *rp; rp++) {
+        if (!trail)
+            snprintf(trial, sizeof trial, "%s/%s", boot_path, *rp);
+        else
+            snprintf(trial, sizeof trial, "%s%s", boot_path, *rp);
+        printf("  \"%s\"\n", trial);
+    }
+    printf("===================================================\n\n");
+
+    if (!gsGlobal)
+        return;
+    tc = FCEUSkin.textcolor ? FCEUSkin.textcolor : GS_SETREG_RGBA(0xff, 0xff, 0xff, 0xff);
+    gsKit_clear(gsGlobal, GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x00, 0x00));
+    printXY("AUTOLOAD FAILED", 40, 90, 3, tc, 1, 0);
+    printXY("game.nes missing (see paths)", 40, 120, 3, tc, 1, 0);
+    snprintf(line, sizeof line, "ELF dir: %s", boot_path);
+    printXY(line, 40, 150, 3, tc, 1, 0);
+    if (!trail)
+        snprintf(trial, sizeof trial, "%s/game.nes", boot_path);
+    else
+        snprintf(trial, sizeof trial, "%sgame.nes", boot_path);
+    snprintf(line, sizeof line, "1st try: %s", trial);
+    printXY(line, 40, 180, 3, tc, 1, 0);
+    printXY("printf log = full list", 40, 210, 3, tc, 1, 0);
+    DrawScreen(gsGlobal);
+    for (i = 0; i < 150; i++) {
+        spin = 0x8000;
+        while (spin--)
+            asm("nop\nnop\nnop\nnop");
+    }
 }
 
 static int auto_rom_file_exists(const char *rom_path)
