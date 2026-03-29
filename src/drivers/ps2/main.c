@@ -767,8 +767,9 @@ int main(int argc, char *argv[])
         }
 
 #ifdef SOUND_ON
-        /* Clear audsrv queue after load so the first emulated frames are not mixed with stale data. */
-        audsrv_stop_audio();
+        /* Re-init audsrv after load (and after cover flow): stop alone can leave IOP streaming
+         * in a bad state when no play_audio ran for a long time; set_format matches OutputSound. */
+        SND_Init();
 #endif
         Set_NESInput();
         SetupNESClut();

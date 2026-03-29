@@ -1,6 +1,7 @@
 /*
  * Cover flow launcher: PNG art in <elf_dir>/images/ matches <stem>.nes in roms/.
- * BG.png is full-screen background (not a game tile). D-pad L/R, X = launch, Triangle = file browser.
+ * Background: BG.png / bg.png (or .jpg) in images/ — loaded after cover art so VRAM for it is not
+ * overwritten by many tile textures. D-pad L/R, X = launch, Triangle = file browser.
  */
 
 #include <stdio.h>
@@ -116,6 +117,46 @@ static int cf_pad_update(u32 *new_pad_out)
 	return 1;
 }
 
+/* Load fullscreen backdrop last so earlier cover PNGs do not clobber its VRAM on tight budgets. */
+static int cf_load_background(GSGLOBAL *gs, GSTEXTURE *bg, const char *img_dir)
+{
+	char path[512];
+	static const char *const png_names[] = { "BG.png", "bg.png", "Bg.png", NULL };
+	static const char *const jpg_names[] = { "BG.jpg", "bg.jpg", "BG.jpeg", "bg.jpeg", NULL };
+	const char *const *n;
+
+	for (n = png_names; *n; n++) {
+		cf_join(path, sizeof path, img_dir, *n);
+		memset(bg, 0, sizeof *bg);
+		if (gsKit_texture_png(gs, bg, path) >= 0 && bg->Width > 0 && bg->Height > 0)
+			return 1;
+	}
+	for (n = jpg_names; *n; n++) {
+		cf_join(path, sizeof path, img_dir, *n);
+		memset(bg, 0, sizeof *bg);
+		if (gsKit_texture_jpeg(gs, bg, path) >= 0 && bg->Width > 0 && bg->Height > 0)
+			return 1;
+	}
+	memset(bg, 0, sizeof *bg);
+	return 0;
+}
+
+static void cf_release_textures(CF_Item *items, int nitems, GSTEXTURE *bg)
+{
+	int i;
+
+	if (bg && bg->Mem) {
+		free(bg->Mem);
+		bg->Mem = NULL;
+	}
+	for (i = 0; i < nitems; i++) {
+		if (items[i].tex.Mem) {
+			free(items[i].tex.Mem);
+			items[i].tex.Mem = NULL;
+		}
+	}
+}
+
 static void cf_draw_slot(CF_Item *it, float cx, float cy, float scale, int z)
 {
 	float draw_h = CF_BASE_HEIGHT * scale;
@@ -146,8 +187,8 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 	DIR *d;
 	struct dirent *de;
 	char img_dir[512];
-	char bg_path[512];
 	int i, sel = 0;
+	int bg_ok = 0;
 	u32 new_pad;
 	int had_pad;
 	char line[80];
@@ -159,7 +200,6 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 	memset(&bg, 0, sizeof bg);
 
 	cf_join(img_dir, sizeof img_dir, elf_dir, "images");
-	cf_join(bg_path, sizeof bg_path, img_dir, "BG.png");
 
 	d = opendir(img_dir);
 	if (!d)
@@ -192,9 +232,6 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 
 	qsort(items, (size_t)nitems, sizeof items[0], cf_cmp_item);
 
-	if (gsKit_texture_png(gsGlobal, &bg, bg_path) < 0)
-		memset(&bg, 0, sizeof bg);
-
 	for (i = 0; i < nitems; i++) {
 		memset(&items[i].tex, 0, sizeof items[i].tex);
 		if (gsKit_texture_png(gsGlobal, &items[i].tex, items[i].png_path) >= 0)
@@ -202,6 +239,8 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 		else
 			items[i].tex_ok = 0;
 	}
+
+	bg_ok = cf_load_background(gsGlobal, &bg, img_dir);
 
 	cf_pad_reset();
 
@@ -223,6 +262,7 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 			if (new_pad & PAD_CROSS) {
 				strncpy(out_path, items[sel].nes_path, outsz - 1);
 				out_path[outsz - 1] = '\0';
+				cf_release_textures(items, nitems, &bg);
 				return 1;
 			}
 			if (new_pad & PAD_LEFT) {
@@ -239,7 +279,7 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 
 		gsKit_clear(gsGlobal, GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x00, 0x00));
 
-		if (bg.Mem != NULL) {
+		if (bg_ok) {
 			gsKit_prim_sprite_texture(gsGlobal, &bg,
 				0.0f, 0.0f, 0.0f, 0.0f,
 				(float)gsGlobal->Width, (float)gsGlobal->Height,
@@ -270,5 +310,6 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 		DrawScreen(gsGlobal);
 	}
 
+	cf_release_textures(items, nitems, &bg);
 	return 0;
 }
