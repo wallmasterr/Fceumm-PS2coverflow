@@ -617,6 +617,7 @@ int main(int argc, char *argv[])
     int ret, sometime;
     char *temp;
     char boot_path[256];
+    char elf_rom_dir[256]; /* ELF folder; Load_Global_CNF() mutates boot_path (CNF path) */
     char *p;
 
     mpartitions[0][0] = 0;
@@ -647,6 +648,8 @@ int main(int argc, char *argv[])
             sprintf(boot_path, "hdd0:/%s/", hdd_path);
         //hdd0:/HDDPATHPFSPATH
     }
+
+    strcpy(elf_rom_dir, boot_path);
 
     Default_Global_CNF();
     Load_Global_CNF(boot_path);
@@ -748,8 +751,8 @@ int main(int argc, char *argv[])
     for (;;) {
         if (!autorom_boot_attempted) {
             autorom_boot_attempted = 1;
-            if (!pick_auto_rom_path((char *)path, 4096, boot_path)) {
-                print_auto_rom_diagnostics(argv[0], boot_path);
+            if (!pick_auto_rom_path((char *)path, 4096, elf_rom_dir)) {
+                print_auto_rom_diagnostics(argv[0], elf_rom_dir);
                 strcpy((char *)path, Browser(1, 0));
             }
         } else {
@@ -823,7 +826,7 @@ static void print_auto_rom_diagnostics(const char *argv0, const char *boot_path)
 
     printf("\n========== AUTOLOAD: game.nes not found ==========\n");
     printf("argv[0] (launch path): \"%s\"\n", argv0 ? argv0 : "(null)");
-    printf("boot_path (ELF folder): \"%s\"\n", boot_path && boot_path[0] ? boot_path : "(empty)");
+    printf("ELF directory (from argv[0]): \"%s\"\n", boot_path && boot_path[0] ? boot_path : "(empty)");
     if (!boot_path || !boot_path[0]) {
         printf("(fix: launcher may not pass a path; try running from mass/hdd with full path)\n");
         printf("===================================================\n\n");

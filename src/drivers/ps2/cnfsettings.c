@@ -154,6 +154,10 @@ void Load_Global_CNF(char *CNF_path_p)
         use_filexio = 0;
         if (fd < 0) {
             printf("Load_CNF %s Open failed %d.\r\n", CNF_path_p, fd);
+            if (((p = strrchr(CNF_path_p, '/')) == NULL) && ((p = strrchr(CNF_path_p, '\\')) == NULL))
+                p = strrchr(CNF_path_p, ':');
+            if (p != NULL)
+                *p = 0;
             return;
         }
     }
