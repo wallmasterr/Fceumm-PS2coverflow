@@ -1,7 +1,8 @@
 /*
  * Cover flow launcher: PNG art in <elf_dir>/images/ matches <stem>.nes in roms/.
  * Background: BG.png / bg.png (or .jpg) in images/ — loaded after cover art so VRAM for it is not
- * overwritten by many tile textures. D-pad L/R, X = launch, Triangle = file browser.
+ * overwritten by many tile textures. Optional FG.png / fg.png (PNG only) drawn above BG with alpha.
+ * D-pad L/R, X = launch, Triangle = file browser.
  */
 
 #include <stdio.h>
@@ -23,9 +24,13 @@ extern u32 old_pad[4];
 
 #define CF_MAX_ITEMS 48
 #define CF_SLOT_SPACING 200.0f
-#define CF_SCALE_CENTER 1.12f
-#define CF_SCALE_SIDE 0.58f
-#define CF_BASE_HEIGHT 200.0f
+#define CF_SCALE_CENTER 1.26f
+#define CF_SCALE_SIDE 0.68f
+#define CF_BASE_HEIGHT 232.0f
+#define CF_CAROUSEL_Y_OFFSET 20.0f
+#define CF_Z_BG 0
+#define CF_Z_FG 2
+#define CF_Z_SLOT_BASE 10
 
 typedef struct {
 	char stem[96];
@@ -128,26 +133,68 @@ static int cf_load_background(GSGLOBAL *gs, GSTEXTURE *bg, const char *img_dir)
 	for (n = png_names; *n; n++) {
 		cf_join(path, sizeof path, img_dir, *n);
 		memset(bg, 0, sizeof *bg);
-		if (gsKit_texture_png(gs, bg, path) >= 0 && bg->Width > 0 && bg->Height > 0)
+		if (gsKit_texture_png(gs, bg, path) != -1 && bg->Width > 0 && bg->Height > 0)
 			return 1;
 	}
 	for (n = jpg_names; *n; n++) {
 		cf_join(path, sizeof path, img_dir, *n);
 		memset(bg, 0, sizeof *bg);
-		if (gsKit_texture_jpeg(gs, bg, path) >= 0 && bg->Width > 0 && bg->Height > 0)
+		if (gsKit_texture_jpeg(gs, bg, path) != -1 && bg->Width > 0 && bg->Height > 0)
 			return 1;
 	}
 	memset(bg, 0, sizeof *bg);
 	return 0;
 }
 
-static void cf_release_textures(CF_Item *items, int nitems, GSTEXTURE *bg)
+/* PNG only — expect alpha channel for transparency */
+static int cf_load_foreground(GSGLOBAL *gs, GSTEXTURE *fg, const char *img_dir)
+{
+	char path[512];
+	static const char *const png_names[] = {
+		"FG.png", "fg.png", "Fg.png", "FG.PNG", "foreground.png", "Foreground.png", NULL
+	};
+	const char *const *n;
+	struct stat st;
+
+	memset(fg, 0, sizeof *fg);
+	for (n = png_names; *n; n++) {
+		cf_join(path, sizeof path, img_dir, *n);
+		if (stat(path, &st) != 0 || !S_ISREG(st.st_mode))
+			continue;
+		if (gsKit_texture_png(gs, fg, path) != -1 && fg->Width > 0 && fg->Height > 0)
+			return 1;
+		memset(fg, 0, sizeof *fg);
+	}
+	return 0;
+}
+
+static void cf_draw_fg_with_alpha(GSTEXTURE *fg)
+{
+	u64 old_alpha;
+	u8 old_pabe;
+
+	old_alpha = gsGlobal->PrimAlpha;
+	old_pabe = gsGlobal->PABE;
+	gsKit_set_primalpha(gsGlobal, GS_SETREG_ALPHA(0, 1, 0, 1, 0), 1);
+	gsKit_prim_sprite_texture(gsGlobal, fg,
+		0.0f, 0.0f, 0.0f, 0.0f,
+		(float)gsGlobal->Width, (float)gsGlobal->Height,
+		(float)fg->Width, (float)fg->Height, CF_Z_FG,
+		GS_SETREG_RGBA(0x80, 0x80, 0x80, 0x00));
+	gsKit_set_primalpha(gsGlobal, old_alpha, old_pabe);
+}
+
+static void cf_release_textures(CF_Item *items, int nitems, GSTEXTURE *bg, GSTEXTURE *fg)
 {
 	int i;
 
 	if (bg && bg->Mem) {
 		free(bg->Mem);
 		bg->Mem = NULL;
+	}
+	if (fg && fg->Mem) {
+		free(fg->Mem);
+		fg->Mem = NULL;
 	}
 	for (i = 0; i < nitems; i++) {
 		if (items[i].tex.Mem) {
@@ -183,12 +230,14 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 {
 	CF_Item items[CF_MAX_ITEMS];
 	GSTEXTURE bg;
+	GSTEXTURE fg;
 	int nitems = 0;
 	DIR *d;
 	struct dirent *de;
 	char img_dir[512];
 	int i, sel = 0;
 	int bg_ok = 0;
+	int fg_ok = 0;
 	u32 new_pad;
 	int had_pad;
 	char line[80];
@@ -198,6 +247,7 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 
 	memset(items, 0, sizeof items);
 	memset(&bg, 0, sizeof bg);
+	memset(&fg, 0, sizeof fg);
 
 	cf_join(img_dir, sizeof img_dir, elf_dir, "images");
 
@@ -217,7 +267,7 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 			continue;
 		memcpy(stem, name, nl - 4);
 		stem[nl - 4] = '\0';
-		if (strcasecmp(stem, "BG") == 0)
+		if (strcasecmp(stem, "BG") == 0 || strcasecmp(stem, "FG") == 0)
 			continue;
 		if (!cf_find_nes(elf_dir, stem, items[nitems].nes_path, sizeof items[nitems].nes_path))
 			continue;
@@ -240,7 +290,10 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 			items[i].tex_ok = 0;
 	}
 
+	/* gsKit_texture_png/jpeg already upload to VRAM — do not call gsKit_texture_upload again
+	 * or TBW/stride gets wrong and BG/FG look garbled. */
 	bg_ok = cf_load_background(gsGlobal, &bg, img_dir);
+	fg_ok = cf_load_foreground(gsGlobal, &fg, img_dir);
 
 	cf_pad_reset();
 
@@ -250,7 +303,7 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 
 	for (;;) {
 		float cx = (float)gsGlobal->Width * 0.5f;
-		float cy = (float)gsGlobal->Height * 0.52f;
+		float cy = (float)gsGlobal->Height * 0.52f + CF_CAROUSEL_Y_OFFSET;
 		int k;
 
 		new_pad = 0;
@@ -262,7 +315,7 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 			if (new_pad & PAD_CROSS) {
 				strncpy(out_path, items[sel].nes_path, outsz - 1);
 				out_path[outsz - 1] = '\0';
-				cf_release_textures(items, nitems, &bg);
+				cf_release_textures(items, nitems, &bg, &fg);
 				return 1;
 			}
 			if (new_pad & PAD_LEFT) {
@@ -283,14 +336,17 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 			gsKit_prim_sprite_texture(gsGlobal, &bg,
 				0.0f, 0.0f, 0.0f, 0.0f,
 				(float)gsGlobal->Width, (float)gsGlobal->Height,
-				(float)bg.Width, (float)bg.Height, 0,
+				(float)bg.Width, (float)bg.Height, CF_Z_BG,
 				GS_SETREG_RGBA(0x80, 0x80, 0x80, 0x00));
 		}
+
+		if (fg_ok)
+			cf_draw_fg_with_alpha(&fg);
 
 		for (k = -2; k <= 2; k++) {
 			int idx = sel + k;
 			float scale = (k == 0) ? CF_SCALE_CENTER : CF_SCALE_SIDE;
-			int z = 5 - (k * k);
+			int z = CF_Z_SLOT_BASE + (5 - (k * k));
 
 			while (idx < 0)
 				idx += nitems;
@@ -304,12 +360,10 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 			FCEUSkin.textcolor ? FCEUSkin.textcolor : GS_SETREG_RGBA(0xff, 0xff, 0xff, 0xff), 1, 0);
 		printXY(line, 40, 56, 20,
 			FCEUSkin.textcolor ? FCEUSkin.textcolor : GS_SETREG_RGBA(0xc0, 0xc0, 0xc0, 0xff), 1, 0);
-		printXY(items[sel].stem, (int)(cx - 60), (int)(cy + CF_BASE_HEIGHT * 0.5f + 24), 25,
-			FCEUSkin.highlight ? FCEUSkin.highlight : GS_SETREG_RGBA(0xff, 0xe0, 0x40, 0xff), 1, 0);
 
 		DrawScreen(gsGlobal);
 	}
 
-	cf_release_textures(items, nitems, &bg);
+	cf_release_textures(items, nitems, &bg, &fg);
 	return 0;
 }
