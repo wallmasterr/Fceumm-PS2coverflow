@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <libpad.h>
 
 #include <dmaKit.h>
@@ -56,6 +57,7 @@ int printXY(const char *s, int x, int y, int z, u64 colour, int draw, int space)
 // GUI related prototypes
 void RunLoaderElf(char *filename, char *party);
 char* Browser(int files_too, int menu_id);
+int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir);
 void menu_background(float x1, float y1, float x2, float y2, int z);
 void menu_primitive(char *title, GSTEXTURE *gsTexture, float x1, float y1, float x2, float y2);
 void browser_primitive(char *title1, char *title2, GSTEXTURE *gsTexture, float x1, float y1, float x2, float y2);

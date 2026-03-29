@@ -754,7 +754,9 @@ char* Browser(int files_too, int menu_id)
                     selected = 0;
                 }
                 else {
-                    sprintf(path, "%s%s/", path, FileEntry[selection].filename);
+                    char ptmp[4096];
+                    snprintf(ptmp, sizeof ptmp, "%s%s/", path, FileEntry[selection].filename);
+                    strcpy(path, ptmp);
                     history[h] = selection;
                     h = h + 1;
                     selection = 0;
@@ -763,8 +765,10 @@ char* Browser(int files_too, int menu_id)
                 }
             }
             else if (!FileEntry[selection].dircheck) { // If file
+                char ptmp[4096];
                 first_file_index = FILEENTRY_SIZE;
-                sprintf(path, "%s%s", path, FileEntry[selection].filename);
+                snprintf(ptmp, sizeof ptmp, "%s%s", path, FileEntry[selection].filename);
+                strcpy(path, ptmp);
                 printf("rompath = %s\n", path);
                 history[h] = selection;
                 selected = 0;

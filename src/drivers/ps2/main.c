@@ -754,10 +754,12 @@ int main(int argc, char *argv[])
             autorom_boot_attempted = 1;
             if (!pick_auto_rom_path((char *)path, 4096, elf_rom_dir)) {
                 print_auto_rom_diagnostics(argv[0], elf_rom_dir);
-                strcpy((char *)path, Browser(1, 0));
+                if (!Coverflow_SelectRom((char *)path, 4096, elf_rom_dir))
+                    strcpy((char *)path, Browser(1, 0));
             }
         } else {
-            strcpy((char *)path, Browser(1, 0));
+            if (!Coverflow_SelectRom((char *)path, 4096, elf_rom_dir))
+                strcpy((char *)path, Browser(1, 0));
         }
 
         if (PS2_LoadGame((char *)path) == 0) {

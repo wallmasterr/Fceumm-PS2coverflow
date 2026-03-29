@@ -1,0 +1,274 @@
+/*
+ * Cover flow launcher: PNG art in <elf_dir>/images/ matches <stem>.nes in roms/.
+ * BG.png is full-screen background (not a game tile). D-pad L/R, X = launch, Triangle = file browser.
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <strings.h>
+#include <libpad.h>
+#include <gsKit.h>
+#include <dmaKit.h>
+
+#include "ps2fceu.h"
+#include "build_stamp.h"
+
+extern GSGLOBAL *gsGlobal;
+extern skin FCEUSkin;
+extern u32 old_pad[4];
+
+#define CF_MAX_ITEMS 48
+#define CF_SLOT_SPACING 200.0f
+#define CF_SCALE_CENTER 1.12f
+#define CF_SCALE_SIDE 0.58f
+#define CF_BASE_HEIGHT 200.0f
+
+typedef struct {
+	char stem[96];
+	char png_path[512];
+	char nes_path[512];
+	GSTEXTURE tex;
+	int tex_ok;
+} CF_Item;
+
+static struct padButtonStatus cf_buttons;
+
+static void cf_join(char *out, size_t outsz, const char *dir, const char *name)
+{
+	size_t len = strlen(dir);
+	if (len > 0 && (dir[len - 1] == '/' || dir[len - 1] == '\\'))
+		snprintf(out, outsz, "%s%s", dir, name);
+	else
+		snprintf(out, outsz, "%s/%s", dir, name);
+}
+
+static int cf_has_ext_ci(const char *name, const char *ext)
+{
+	size_t nl = strlen(name), el = strlen(ext);
+	if (nl < el)
+		return 0;
+	return strcasecmp(name + nl - el, ext) == 0;
+}
+
+static int cf_find_nes(const char *elf_dir, const char *stem, char *out, size_t outsz)
+{
+	static const char *const rels[] = { "roms", "rom", NULL };
+	const char *const *rp;
+	char trial[512];
+	struct stat st;
+	size_t el = strlen(elf_dir);
+	int trail = el && (elf_dir[el - 1] == '/' || elf_dir[el - 1] == '\\');
+
+	for (rp = rels; *rp; rp++) {
+		if (!trail)
+			snprintf(trial, sizeof trial, "%s/%s/%s.nes", elf_dir, *rp, stem);
+		else
+			snprintf(trial, sizeof trial, "%s%s/%s.nes", elf_dir, *rp, stem);
+		if (stat(trial, &st) == 0 && S_ISREG(st.st_mode)) {
+			strncpy(out, trial, outsz - 1);
+			out[outsz - 1] = '\0';
+			return 1;
+		}
+	}
+	if (!trail)
+		snprintf(trial, sizeof trial, "%s/%s.nes", elf_dir, stem);
+	else
+		snprintf(trial, sizeof trial, "%s%s.nes", elf_dir, stem);
+	if (stat(trial, &st) == 0 && S_ISREG(st.st_mode)) {
+		strncpy(out, trial, outsz - 1);
+		out[outsz - 1] = '\0';
+		return 1;
+	}
+	return 0;
+}
+
+static int cf_cmp_item(const void *a, const void *b)
+{
+	return strcasecmp(((const CF_Item *)a)->stem, ((const CF_Item *)b)->stem);
+}
+
+static void cf_pad_reset(void)
+{
+	old_pad[0] = 0xFFFF;
+}
+
+static int cf_pad_update(u32 *new_pad_out)
+{
+	u32 paddata, new_pad;
+	u16 slot = 0;
+	int ret;
+
+	ret = padGetState(0, slot);
+	if ((ret != PAD_STATE_STABLE) && (ret != PAD_STATE_FINDCTP1))
+		ret = padGetState(0, slot);
+
+	ret = padRead(0, slot, &cf_buttons);
+	if (ret == 0)
+		return 0;
+
+	paddata = 0xFFFF ^ cf_buttons.btns;
+	new_pad = paddata & ~old_pad[0];
+	old_pad[0] = paddata;
+	*new_pad_out = new_pad;
+	return 1;
+}
+
+static void cf_draw_slot(CF_Item *it, float cx, float cy, float scale, int z)
+{
+	float draw_h = CF_BASE_HEIGHT * scale;
+	float draw_w;
+	u64 dim = GS_SETREG_RGBA(0x50, 0x50, 0x55, 0x00);
+	u64 hi = FCEUSkin.textcolor ? FCEUSkin.textcolor : GS_SETREG_RGBA(0xff, 0xff, 0xff, 0xff);
+
+	if (it->tex_ok && it->tex.Height > 0) {
+		draw_w = draw_h * ((float)it->tex.Width / (float)it->tex.Height);
+		gsKit_prim_sprite_texture(gsGlobal, &it->tex,
+			cx - draw_w * 0.5f, cy - draw_h * 0.5f, 0.0f, 0.0f,
+			cx + draw_w * 0.5f, cy + draw_h * 0.5f,
+			(float)it->tex.Width, (float)it->tex.Height, z,
+			GS_SETREG_RGBA(0x80, 0x80, 0x80, 0x00));
+	} else {
+		gsKit_prim_sprite(gsGlobal,
+			cx - 80.0f * scale, cy - draw_h * 0.5f,
+			cx + 80.0f * scale, cy + draw_h * 0.5f, z, dim);
+		printXY(it->stem, (int)(cx - 40), (int)(cy - 8), z + 1, hi, 1, 0);
+	}
+}
+
+int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
+{
+	CF_Item items[CF_MAX_ITEMS];
+	GSTEXTURE bg;
+	int nitems = 0;
+	DIR *d;
+	struct dirent *de;
+	char img_dir[512];
+	char bg_path[512];
+	int i, sel = 0;
+	u32 new_pad;
+	int had_pad;
+	char line[80];
+
+	if (!out_path || outsz == 0 || !elf_dir || !elf_dir[0])
+		return 0;
+
+	memset(items, 0, sizeof items);
+	memset(&bg, 0, sizeof bg);
+
+	cf_join(img_dir, sizeof img_dir, elf_dir, "images");
+	cf_join(bg_path, sizeof bg_path, img_dir, "BG.png");
+
+	d = opendir(img_dir);
+	if (!d)
+		return 0;
+
+	while ((de = readdir(d)) != NULL && nitems < CF_MAX_ITEMS) {
+		char *name = de->d_name;
+		char stem[96];
+		size_t nl;
+
+		if (!cf_has_ext_ci(name, ".png"))
+			continue;
+		nl = strlen(name);
+		if (nl < 5)
+			continue;
+		memcpy(stem, name, nl - 4);
+		stem[nl - 4] = '\0';
+		if (strcasecmp(stem, "BG") == 0)
+			continue;
+		if (!cf_find_nes(elf_dir, stem, items[nitems].nes_path, sizeof items[nitems].nes_path))
+			continue;
+		strncpy(items[nitems].stem, stem, sizeof items[nitems].stem - 1);
+		cf_join(items[nitems].png_path, sizeof items[nitems].png_path, img_dir, name);
+		nitems++;
+	}
+	closedir(d);
+
+	if (nitems == 0)
+		return 0;
+
+	qsort(items, (size_t)nitems, sizeof items[0], cf_cmp_item);
+
+	if (gsKit_texture_png(gsGlobal, &bg, bg_path) < 0)
+		memset(&bg, 0, sizeof bg);
+
+	for (i = 0; i < nitems; i++) {
+		memset(&items[i].tex, 0, sizeof items[i].tex);
+		if (gsKit_texture_png(gsGlobal, &items[i].tex, items[i].png_path) >= 0)
+			items[i].tex_ok = 1;
+		else
+			items[i].tex_ok = 0;
+	}
+
+	cf_pad_reset();
+
+	gsKit_mode_switch(gsGlobal, GS_ONESHOT);
+	gsKit_queue_reset(gsGlobal->Os_Queue);
+	gsGlobal->DrawOrder = GS_PER_OS;
+
+	for (;;) {
+		float cx = (float)gsGlobal->Width * 0.5f;
+		float cy = (float)gsGlobal->Height * 0.52f;
+		int k;
+
+		new_pad = 0;
+		had_pad = cf_pad_update(&new_pad);
+
+		if (had_pad) {
+			if (new_pad & PAD_TRIANGLE)
+				break;
+			if (new_pad & PAD_CROSS) {
+				strncpy(out_path, items[sel].nes_path, outsz - 1);
+				out_path[outsz - 1] = '\0';
+				return 1;
+			}
+			if (new_pad & PAD_LEFT) {
+				sel--;
+				if (sel < 0)
+					sel = nitems - 1;
+			}
+			if (new_pad & PAD_RIGHT) {
+				sel++;
+				if (sel >= nitems)
+					sel = 0;
+			}
+		}
+
+		gsKit_clear(gsGlobal, GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x00, 0x00));
+
+		if (bg.Mem != NULL) {
+			gsKit_prim_sprite_texture(gsGlobal, &bg,
+				0.0f, 0.0f, 0.0f, 0.0f,
+				(float)gsGlobal->Width, (float)gsGlobal->Height,
+				(float)bg.Width, (float)bg.Height, 0,
+				GS_SETREG_RGBA(0x80, 0x80, 0x80, 0x00));
+		}
+
+		for (k = -2; k <= 2; k++) {
+			int idx = sel + k;
+			float scale = (k == 0) ? CF_SCALE_CENTER : CF_SCALE_SIDE;
+			int z = 5 - (k * k);
+
+			while (idx < 0)
+				idx += nitems;
+			while (idx >= nitems)
+				idx -= nitems;
+			cf_draw_slot(&items[idx], cx + (float)k * CF_SLOT_SPACING, cy, scale, z);
+		}
+
+		snprintf(line, sizeof line, "[%s]  X=Play  TRI=Browser", LOWTEK_BUILD_ID);
+		printXY("LOWTEK GAMES", 40, 36, 20,
+			FCEUSkin.textcolor ? FCEUSkin.textcolor : GS_SETREG_RGBA(0xff, 0xff, 0xff, 0xff), 1, 0);
+		printXY(line, 40, 56, 20,
+			FCEUSkin.textcolor ? FCEUSkin.textcolor : GS_SETREG_RGBA(0xc0, 0xc0, 0xc0, 0xff), 1, 0);
+		printXY(items[sel].stem, (int)(cx - 60), (int)(cy + CF_BASE_HEIGHT * 0.5f + 24), 25,
+			FCEUSkin.highlight ? FCEUSkin.highlight : GS_SETREG_RGBA(0xff, 0xe0, 0x40, 0xff), 1, 0);
+
+		DrawScreen(gsGlobal);
+	}
+
+	return 0;
+}
