@@ -7,6 +7,7 @@
 #include "../../fceu-types.h"
 
 #include "ps2fceu.h"
+#include "build_stamp.h"
 extern char path[4096];
 extern vars Settings;
 extern skin FCEUSkin;
@@ -587,7 +588,7 @@ extern void Set_NESInput();
 extern  int Get_NESInput();
 
 static  int PS2_LoadGame(char *path);
-static void build_auto_rom_path(char *dest, size_t destsz, const char *boot_path);
+static int  pick_auto_rom_path(char *dest, size_t destsz, const char *boot_path);
 static int  auto_rom_file_exists(const char *rom_path);
 static void SetupNESTexture();
        void SetupNESClut();
@@ -698,6 +699,24 @@ int main(int argc, char *argv[])
         menutex = 1;
     }
 
+    /* Boot splash — confirms Lowtek build is running; shows unique build ID */
+    {
+        char idline[48];
+        int i, spin;
+        u64 tc = FCEUSkin.textcolor ? FCEUSkin.textcolor : GS_SETREG_RGBA(0xff, 0xff, 0xff, 0xff);
+
+        gsKit_clear(gsGlobal, GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x00, 0x00));
+        printXY("LOWTEK GAMES", 72, 180, 3, tc, 1, 0);
+        snprintf(idline, sizeof idline, "build %s", LOWTEK_BUILD_ID);
+        printXY(idline, 72, 210, 3, tc, 1, 0);
+        printXY("FCE Ultra PS2", 72, 250, 3, tc, 1, 0);
+        DrawScreen(gsGlobal);
+        for (i = 0; i < 90; i++) {
+            spin = 0x40000;
+            while (spin--)
+                asm("nop\nnop\nnop\nnop");
+        }
+    }
 
     if (!(ret = FCEUI_Initialize())) { // Allocates all memory for FCEU* functions
         printf("FCEUltra did not initialize.\n");
@@ -720,8 +739,7 @@ int main(int argc, char *argv[])
     for (;;) {
         if (!autorom_boot_attempted) {
             autorom_boot_attempted = 1;
-            build_auto_rom_path((char *)path, 4096, boot_path);
-            if (!auto_rom_file_exists((char *)path))
+            if (!pick_auto_rom_path((char *)path, 4096, boot_path))
                 strcpy((char *)path, Browser(1, 0));
         } else {
             strcpy((char *)path, Browser(1, 0));
@@ -749,22 +767,42 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-static void build_auto_rom_path(char *dest, size_t destsz, const char *boot_path)
+/* Tries rom/game.nes then roms/game.nes (same folder as ELF). Returns 1 if found. */
+static int pick_auto_rom_path(char *dest, size_t destsz, const char *boot_path)
 {
+    static const char *const rels[] = {
+        "rom/game.nes",
+        "roms/game.nes",
+        NULL
+    };
     size_t n;
+    int trail;
+    const char *const *rp;
 
     if (!dest || destsz == 0)
-        return;
+        return 0;
     dest[0] = '\0';
     if (!boot_path)
-        return;
+        return 0;
     n = strlen(boot_path);
     if (n == 0)
-        return;
-    if (boot_path[n - 1] != '/' && boot_path[n - 1] != '\\')
-        snprintf(dest, destsz, "%s/rom/game.nes", boot_path);
+        return 0;
+    trail = (boot_path[n - 1] == '/' || boot_path[n - 1] == '\\');
+
+    for (rp = rels; *rp; rp++) {
+        if (!trail)
+            snprintf(dest, destsz, "%s/%s", boot_path, *rp);
+        else
+            snprintf(dest, destsz, "%s%s", boot_path, *rp);
+        if (auto_rom_file_exists(dest))
+            return 1;
+    }
+    /* Prefer roms/ as default path when opening browser after failed auto-load */
+    if (!trail)
+        snprintf(dest, destsz, "%s/roms/game.nes", boot_path);
     else
-        snprintf(dest, destsz, "%srom/game.nes", boot_path);
+        snprintf(dest, destsz, "%sroms/game.nes", boot_path);
+    return 0;
 }
 
 static int auto_rom_file_exists(const char *rom_path)

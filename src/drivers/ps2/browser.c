@@ -18,7 +18,7 @@
 #endif
 
 #include "ps2fceu.h"
-
+#include "build_stamp.h"
 
 extern vars Settings;
 extern skin FCEUSkin;
@@ -665,9 +665,14 @@ char* Browser(int files_too, int menu_id)
         if (selection > (n-1)) { selection = 0; } //selection-(n-1); }
         if (selection < 0) { selection = (n-1); }
         if (selection != oldselect) {
+            char br_title_left[64];
+            char br_title_right[64];
+
+            snprintf(br_title_left, sizeof br_title_left, "Lowtek Games");
+            snprintf(br_title_right, sizeof br_title_right, "Browser [%s]", LOWTEK_BUILD_ID);
 
             gsKit_clear(gsGlobal, GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x00, 0x00));
-            browser_primitive("FCEUltra PS2 B0.93 [x.3.3]", "Browser", &BG_TEX, menu_x1, menu_y1, menu_x2, menu_y2);
+            browser_primitive(br_title_left, br_title_right, &BG_TEX, menu_x1, menu_y1, menu_x2, menu_y2);
 
             if (selection > max_item) {
                 list_offset = text_line - (selection - max_item) * FONT_HEIGHT;
