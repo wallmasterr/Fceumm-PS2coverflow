@@ -24,10 +24,10 @@ extern u32 old_pad[4];
 
 #define CF_MAX_ITEMS 48
 #define CF_SLOT_SPACING 200.0f
-#define CF_SCALE_CENTER 1.26f
-#define CF_SCALE_SIDE 0.68f
-#define CF_BASE_HEIGHT 232.0f
-#define CF_CAROUSEL_Y_OFFSET 20.0f
+#define CF_SCALE_CENTER 1.14f
+#define CF_SCALE_SIDE 0.60f
+#define CF_BASE_HEIGHT 208.0f
+#define CF_CAROUSEL_Y_OFFSET 44.0f
 #define CF_Z_BG 0
 #define CF_Z_FG 2
 #define CF_Z_SLOT_BASE 10
@@ -240,7 +240,6 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 	int fg_ok = 0;
 	u32 new_pad;
 	int had_pad;
-	char line[80];
 
 	if (!out_path || outsz == 0 || !elf_dir || !elf_dir[0])
 		return 0;
@@ -355,11 +354,16 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 			cf_draw_slot(&items[idx], cx + (float)k * CF_SLOT_SPACING, cy, scale, z);
 		}
 
-		snprintf(line, sizeof line, "[%s]  X=Play  TRI=Browser", LOWTEK_BUILD_ID);
-		printXY("LOWTEK GAMES", 40, 36, 20,
-			FCEUSkin.textcolor ? FCEUSkin.textcolor : GS_SETREG_RGBA(0xff, 0xff, 0xff, 0xff), 1, 0);
-		printXY(line, 40, 56, 20,
-			FCEUSkin.textcolor ? FCEUSkin.textcolor : GS_SETREG_RGBA(0xc0, 0xc0, 0xc0, 0xff), 1, 0);
+		{
+			const char *bid = LOWTEK_BUILD_ID;
+			int text_w = (int)strlen(bid) * 8;
+			int bx = gsGlobal->Width - text_w - 12;
+			int by = gsGlobal->Height - 20;
+			if (bx < 8)
+				bx = 8;
+			printXY(bid, bx, by, 40,
+				FCEUSkin.textcolor ? FCEUSkin.textcolor : GS_SETREG_RGBA(0xc0, 0xc0, 0xc0, 0xff), 1, 0);
+		}
 
 		DrawScreen(gsGlobal);
 	}
