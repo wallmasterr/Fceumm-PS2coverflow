@@ -658,7 +658,6 @@ char* Browser(int files_too, int menu_id)
             }
             strcpy(oldpath, path); // Needed so listdir isn't called every loop
             oldselect = -1; // So the screen draws on load
-            printf("n = %d\n", n);
         }
 
         // Display list
@@ -760,7 +759,6 @@ char* Browser(int files_too, int menu_id)
                     history[h] = selection;
                     h = h + 1;
                     selection = 0;
-                    printf("path is %s\n", path);
                     selected = 0;
                 }
             }
@@ -769,7 +767,6 @@ char* Browser(int files_too, int menu_id)
                 first_file_index = FILEENTRY_SIZE;
                 snprintf(ptmp, sizeof ptmp, "%s%s", path, FileEntry[selection].filename);
                 strcpy(path, ptmp);
-                printf("rompath = %s\n", path);
                 history[h] = selection;
                 selected = 0;
                 //free(FileEntry);

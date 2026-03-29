@@ -599,7 +599,8 @@ extern  int Get_NESInput();
 static  int PS2_LoadGame(char *path);
 static int  pick_auto_rom_path(char *dest, size_t destsz, const char *boot_path);
 static int  auto_rom_file_exists(const char *rom_path);
-static void print_auto_rom_diagnostics(const char *argv0, const char *boot_path);
+static void reload_gui_textures_from_skin(void);
+static void prepare_graphics_for_rom_load(void);
 static void SetupNESTexture();
        void SetupNESClut();
        void SetupNESGS();
@@ -679,38 +680,7 @@ int main(int argc, char *argv[])
         Default_Skin_CNF();
     }
 
-    // Setup GUI Textures
-    if (strstr(FCEUSkin.bgTexture, ".png") != NULL) {
-         if (gsKit_texture_png(gsGlobal, &BG_TEX, FCEUSkin.bgTexture) < 0) {
-            printf("Error with browser background png!\n");
-            bgtex = 1;
-         }
-    }
-    else if (strstr(FCEUSkin.bgTexture, ".jpg") != NULL || strstr(FCEUSkin.bgTexture, ".jpeg") != NULL) {
-        if (gsKit_texture_jpeg(gsGlobal, &BG_TEX, FCEUSkin.bgTexture) < 0) {
-            printf("Error with browser background jpg!\n");
-            bgtex = 1;
-        }
-    }
-    else {
-        bgtex = 1;
-    }
-
-    if (strstr(FCEUSkin.bgMenu, ".png") != NULL) {
-        if (gsKit_texture_png(gsGlobal, &MENU_TEX, FCEUSkin.bgMenu) == -1) {
-            printf("Error with menu background png!\n");
-            menutex = 1;
-        }
-    }
-    else if (strstr(FCEUSkin.bgMenu, ".jpg") != NULL || strstr(FCEUSkin.bgMenu, ".jpeg") != NULL) {
-        if (gsKit_texture_jpeg(gsGlobal, &MENU_TEX, FCEUSkin.bgMenu) < 0) {
-            printf("Error with menu background jpg!\n");
-            menutex = 1;
-        }
-    }
-    else {
-        menutex = 1;
-    }
+    reload_gui_textures_from_skin();
 
     /* Boot splash — confirms Lowtek build is running; shows unique build ID */
     {
@@ -746,14 +716,11 @@ int main(int argc, char *argv[])
 
     SND_Init();
 
-    SetupNESTexture();
-
     // Main emulation loop
     for (;;) {
         if (!autorom_boot_attempted) {
             autorom_boot_attempted = 1;
             if (!pick_auto_rom_path((char *)path, 4096, elf_rom_dir)) {
-                print_auto_rom_diagnostics(argv[0], elf_rom_dir);
                 if (!Coverflow_SelectRom((char *)path, 4096, elf_rom_dir))
                     strcpy((char *)path, Browser(1, 0));
             }
@@ -761,6 +728,11 @@ int main(int argc, char *argv[])
             if (!Coverflow_SelectRom((char *)path, 4096, elf_rom_dir))
                 strcpy((char *)path, Browser(1, 0));
         }
+
+        /* Match browser path: RomBrowserInput loop calls init_custom_screen() early, which
+         * gsKit_vram_clear()s and drops cover-flow / menu VRAM use before emulation. Autoboot
+         * and cover flow skipped that, leaving GS VRAM full and causing jitter. */
+        prepare_graphics_for_rom_load();
 
         if (PS2_LoadGame((char *)path) == 0) {
             continue;
@@ -822,59 +794,6 @@ static int pick_auto_rom_path(char *dest, size_t destsz, const char *boot_path)
     return 0;
 }
 
-static void print_auto_rom_diagnostics(const char *argv0, const char *boot_path)
-{
-    char trial[512];
-    char line[80];
-    size_t n;
-    int trail;
-    const char *const *rp;
-    u64 tc;
-    int i, spin;
-
-    printf("\n========== AUTOLOAD: game.nes not found ==========\n");
-    printf("argv[0] (launch path): \"%s\"\n", argv0 ? argv0 : "(null)");
-    printf("ELF directory (from argv[0]): \"%s\"\n", boot_path && boot_path[0] ? boot_path : "(empty)");
-    if (!boot_path || !boot_path[0]) {
-        printf("(fix: launcher may not pass a path; try running from mass/hdd with full path)\n");
-        printf("===================================================\n\n");
-        return;
-    }
-    n = strlen(boot_path);
-    trail = (boot_path[n - 1] == '/' || boot_path[n - 1] == '\\');
-    printf("fopen tried (must open for read):\n");
-    for (rp = auto_rom_relpaths; *rp; rp++) {
-        if (!trail)
-            snprintf(trial, sizeof trial, "%s/%s", boot_path, *rp);
-        else
-            snprintf(trial, sizeof trial, "%s%s", boot_path, *rp);
-        printf("  \"%s\"\n", trial);
-    }
-    printf("===================================================\n\n");
-
-    if (!gsGlobal)
-        return;
-    tc = FCEUSkin.textcolor ? FCEUSkin.textcolor : GS_SETREG_RGBA(0xff, 0xff, 0xff, 0xff);
-    gsKit_clear(gsGlobal, GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x00, 0x00));
-    printXY("AUTOLOAD FAILED", 40, 90, 3, tc, 1, 0);
-    printXY("game.nes missing (see paths)", 40, 120, 3, tc, 1, 0);
-    snprintf(line, sizeof line, "ELF dir: %s", boot_path);
-    printXY(line, 40, 150, 3, tc, 1, 0);
-    if (!trail)
-        snprintf(trial, sizeof trial, "%s/game.nes", boot_path);
-    else
-        snprintf(trial, sizeof trial, "%sgame.nes", boot_path);
-    snprintf(line, sizeof line, "1st try: %s", trial);
-    printXY(line, 40, 180, 3, tc, 1, 0);
-    printXY("printf log = full list", 40, 210, 3, tc, 1, 0);
-    DrawScreen(gsGlobal);
-    for (i = 0; i < 150; i++) {
-        spin = 0x8000;
-        while (spin--)
-            asm("nop\nnop\nnop\nnop");
-    }
-}
-
 static int auto_rom_file_exists(const char *rom_path)
 {
     struct stat st;
@@ -894,18 +813,70 @@ static int PS2_LoadGame(char *path)
 
 //    CloseGame();
     if ((tmp = FCEUI_LoadGame(path))) {
-        printf("Loaded!\n");
         CurGame = tmp;
         return 1;
     }
-    else {
-        printf("Didn't load!\n");
-        return 0;
+    return 0;
+}
+
+static void reload_gui_textures_from_skin(void)
+{
+    if (BG_TEX.Mem) {
+        free(BG_TEX.Mem);
+        BG_TEX.Mem = NULL;
     }
+    if (MENU_TEX.Mem) {
+        free(MENU_TEX.Mem);
+        MENU_TEX.Mem = NULL;
+    }
+    memset(&BG_TEX, 0, sizeof BG_TEX);
+    memset(&MENU_TEX, 0, sizeof MENU_TEX);
+
+    bgtex = 0;
+    menutex = 0;
+
+    if (strstr(FCEUSkin.bgTexture, ".png") != NULL) {
+        if (gsKit_texture_png(gsGlobal, &BG_TEX, FCEUSkin.bgTexture) < 0) {
+            bgtex = 1;
+        }
+    }
+    else if (strstr(FCEUSkin.bgTexture, ".jpg") != NULL || strstr(FCEUSkin.bgTexture, ".jpeg") != NULL) {
+        if (gsKit_texture_jpeg(gsGlobal, &BG_TEX, FCEUSkin.bgTexture) < 0) {
+            bgtex = 1;
+        }
+    }
+    else {
+        bgtex = 1;
+    }
+
+    if (strstr(FCEUSkin.bgMenu, ".png") != NULL) {
+        if (gsKit_texture_png(gsGlobal, &MENU_TEX, FCEUSkin.bgMenu) == -1) {
+            menutex = 1;
+        }
+    }
+    else if (strstr(FCEUSkin.bgMenu, ".jpg") != NULL || strstr(FCEUSkin.bgMenu, ".jpeg") != NULL) {
+        if (gsKit_texture_jpeg(gsGlobal, &MENU_TEX, FCEUSkin.bgMenu) < 0) {
+            menutex = 1;
+        }
+    }
+    else {
+        menutex = 1;
+    }
+}
+
+static void prepare_graphics_for_rom_load(void)
+{
+    init_custom_screen();
+    SetupNESTexture();
+    reload_gui_textures_from_skin();
 }
 
 void SetupNESTexture()
 {
+    if (NES_TEX.Clut != NULL) {
+        free(NES_TEX.Clut);
+        NES_TEX.Clut = NULL;
+    }
     // Comments after settings are for regular clut lookup
     // Setup NES_TEX Texture
     NES_TEX.PSM = GS_PSM_T8; //GS_PSM_CT32
