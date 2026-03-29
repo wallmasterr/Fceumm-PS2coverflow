@@ -24,15 +24,6 @@ extern u8 bgtex;
 extern char path[4096];
 extern u8 h;
 
-// Palette for FCEU
-#define MAXPAL (29 + 1)
-struct st_palettes {
-    char name[32];
-    char desc[32];
-    unsigned int data[64];
-};
-extern struct st_palettes palettes[];
-
 static int statenum = 0;
 static u8 power_off = 0;
 
@@ -75,45 +66,29 @@ static inline char *strzncpy(char *d, const char *s, size_t l)
 void menu_background(float x1, float y1, float x2, float y2, int z)
 {
     int thickness = 3;
+    u64 red = GS_SETREG_RGBA(0xff, 0x00, 0x00, 0x00);
 
-    // Border
-    gsKit_prim_sprite(gsGlobal, x1, y1, x2, y1+thickness, z, FCEUSkin.frame); // Top
-    gsKit_prim_sprite(gsGlobal, x1, y1, x1+thickness, y2, z, FCEUSkin.frame); // Left
-    gsKit_prim_sprite(gsGlobal, x2-thickness, y1, x2, y2, z, FCEUSkin.frame); // Right
-    gsKit_prim_sprite(gsGlobal, x1, y2-thickness, x2, y2, z, FCEUSkin.frame); // Bottom
+    gsKit_prim_sprite(gsGlobal, x1, y1, x2, y1+thickness, z, FCEUSkin.frame);
+    gsKit_prim_sprite(gsGlobal, x1, y1, x1+thickness, y2, z, FCEUSkin.frame);
+    gsKit_prim_sprite(gsGlobal, x2-thickness, y1, x2, y2, z, FCEUSkin.frame);
+    gsKit_prim_sprite(gsGlobal, x1, y2-thickness, x2, y2, z, FCEUSkin.frame);
 
-    // Background
-    gsKit_prim_quad_gouraud(gsGlobal, x1+thickness, y1+thickness,
-                                      x2-thickness, y1+thickness,
-                                      x1+thickness, y2-thickness,
-                                      x2-thickness, y2-thickness,
-                                      z+1,
-                                      FCEUSkin.bgColor1, FCEUSkin.bgColor2,
-                                      FCEUSkin.bgColor3, FCEUSkin.bgColor4);
+    gsKit_prim_sprite(gsGlobal, x1+thickness, y1+thickness, x2-thickness, y2-thickness, z+1, red);
 }
 
 void menu_bgtexture(GSTEXTURE *gsTexture, float x1, float y1, float x2, float y2, int z)
 {
     int thickness = 3;
+    u64 red = GS_SETREG_RGBA(0xff, 0x00, 0x00, 0x00);
 
-    // Border
-    gsKit_prim_sprite(gsGlobal, x1, y1, x2, y1+thickness, z, FCEUSkin.frame); // Top
-    gsKit_prim_sprite(gsGlobal, x1, y1, x1+thickness, y2, z, FCEUSkin.frame); // Left
-    gsKit_prim_sprite(gsGlobal, x2-thickness, y1, x2, y2, z, FCEUSkin.frame); // Right
-    gsKit_prim_sprite(gsGlobal, x1, y2-thickness, x2, y2, z, FCEUSkin.frame); // Bottom
+    (void)gsTexture;
 
-    gsKit_prim_sprite_texture(gsGlobal, gsTexture,
-        x1 + thickness,                        /* X1 */
-        y1 + thickness,                        /* Y1 */
-        0.0f,                                  /* U1 */
-        0.0f,                                  /* V1 */
-        x2 - thickness,                        /* X2 */
-        y2 - thickness,                        /* Y2 */
-        gsTexture->Width,                      /* U2 */
-        gsTexture->Height,                     /* V2 */
-        z + 1,                                 /* Z  */
-        GS_SETREG_RGBA(0x80, 0x80, 0x80, 0x00) /* RGBA */
-    );
+    gsKit_prim_sprite(gsGlobal, x1, y1, x2, y1+thickness, z, FCEUSkin.frame);
+    gsKit_prim_sprite(gsGlobal, x1, y1, x1+thickness, y2, z, FCEUSkin.frame);
+    gsKit_prim_sprite(gsGlobal, x2-thickness, y1, x2, y2, z, FCEUSkin.frame);
+    gsKit_prim_sprite(gsGlobal, x1, y2-thickness, x2, y2, z, FCEUSkin.frame);
+
+    gsKit_prim_sprite(gsGlobal, x1+thickness, y1+thickness, x2-thickness, y2-thickness, z+1, red);
 }
 
 void menu_primitive(char *title, GSTEXTURE *gsTexture, float x1, float y1, float x2, float y2)
@@ -199,10 +174,10 @@ static int menu_input(int port, int center_screen)
             Settings.offset_y = 0;
             change = 1;
         }
-        if (new_pad[port] & PAD_CIRCLE) {
+        if (new_pad[port] & PAD_CROSS) {
             selected = 1;
         }
-        if (new_pad[port] & PAD_CROSS) {
+        if (new_pad[port] & PAD_CIRCLE) {
         }
         if ((new_pad[port] == Settings.PlayerInput[port][0]
           || new_pad[port] == PAD_TRIANGLE) && !center_screen) {
@@ -465,16 +440,11 @@ int Browser_Menu()
 }
 
 extern void SetupNESGS();
-extern void SetupNESClut();
-
-extern void SND_SetNextSampleRate();
-extern  int SND_GetCurrSampleRate();
 
 static void Ingame_Menu_Controls();
 
-#define INGAME_MENU_N 11
-#define INGAME_MENU_EXIT_I 9
-#define INGAME_MENU_PALETTE_I 7
+#define INGAME_MENU_N 7
+#define INGAME_MENU_EXIT_I 5
 
 void Ingame_Menu()
 {
@@ -494,11 +464,7 @@ void Ingame_Menu()
         { "State number: " },
         { "Save State" },
         { "Load State" },
-        { "Filtering: "},
-        { "Aspect Ratio: "},
-        { "Sound: " },
         { "Configure Input >" },
-        { "Pal: " },
         { "Reset Game" },
         { "Exit Menu" },
         { "Exit Game" },
@@ -510,30 +476,6 @@ void Ingame_Menu()
         switch (i) {
             case 0:
                 sprintf(options_state[i], "%d", statenum);
-                break;
-            case 3:
-                if (Settings.filter)
-                    strcpy(options_state[i], "On");
-                else
-                    strcpy(options_state[i], "Off");
-                break;
-            case 4:
-                if (Settings.aspect_ratio == 0)
-                    strcpy(options_state[i], "Full Screen");
-                else if (Settings.aspect_ratio == 1)
-                    strcpy(options_state[i], "Best Fit (4:3)");
-                break;
-            case 5:
-                if (!Settings.sound)
-                    strcpy(options_state[i], "Off");
-                else
-                    sprintf(options_state[i], "%dHz", SND_GetCurrSampleRate());
-                break;
-            case 7:
-                if (Settings.current_palette == 0)
-                    strcpy(options_state[i], "Default (FCEU)");
-                else
-                    strcpy(options_state[i], palettes[Settings.current_palette - 1].desc);
                 break;
         }
     }
@@ -558,31 +500,16 @@ void Ingame_Menu()
 
             option_changed = 0;
 
-            if (selection == INGAME_MENU_PALETTE_I) {
-                int y1 = text_line + INGAME_MENU_PALETTE_I*FONT_HEIGHT;
-                int y2 = text_line + (INGAME_MENU_PALETTE_I+1)*FONT_HEIGHT;
-                gsKit_prim_quad_gouraud(gsGlobal,
-                    menu_x1, y1, menu_x2, y1, menu_x1, y2, menu_x2, y2,
-                    2,
-                    FCEUSkin.bgColor1, FCEUSkin.bgColor2, FCEUSkin.bgColor3, FCEUSkin.bgColor4);
-                strcpy(options_buffer, options[INGAME_MENU_PALETTE_I]);
-                strcat(options_buffer, options_state[INGAME_MENU_PALETTE_I]);
-                printXY(options_buffer, menu_x1+10, y1, 4, FCEUSkin.highlight, 1, 0);
-            }
-            else {
-                menu_primitive("Options", &MENU_TEX, menu_x1, menu_y1, menu_x2, menu_y2);
+            menu_primitive("Options", &MENU_TEX, menu_x1, menu_y1, menu_x2, menu_y2);
 
-                for (i = 0; i < INGAME_MENU_N; i++) {
-                    strcpy(options_buffer, options[i]);
-                    strcat(options_buffer, options_state[i]);
-                    if (selection == i) {
-                        //font_print(gsGlobal, menu_x1+10.0f, text_line + i*FONT_HEIGHT, 2, DarkYellowFont, options[i]);
-                        printXY(options_buffer, menu_x1+10, text_line + i*FONT_HEIGHT, 4, FCEUSkin.highlight, 1, 0);
-                    }
-                    else {
-                        //font_print(gsGlobal, menu_x1+10.0f, text_line + i*FONT_HEIGHT, 2, WhiteFont, options[i]);
-                        printXY(options_buffer, menu_x1+10, text_line + i*FONT_HEIGHT, 4, FCEUSkin.textcolor, 1, 0);
-                    }
+            for (i = 0; i < INGAME_MENU_N; i++) {
+                strcpy(options_buffer, options[i]);
+                strcat(options_buffer, options_state[i]);
+                if (selection == i) {
+                    printXY(options_buffer, menu_x1+10, text_line + i*FONT_HEIGHT, 4, FCEUSkin.highlight, 1, 0);
+                }
+                else {
+                    printXY(options_buffer, menu_x1+10, text_line + i*FONT_HEIGHT, 4, FCEUSkin.textcolor, 1, 0);
                 }
             }
 
@@ -613,56 +540,16 @@ void Ingame_Menu()
                     SetupNESGS();
                     return;
                 case 3:
-                    Settings.filter ^= 1;
-                    if (Settings.filter) {
-                        strcpy(options_state[i], "On");
-                    }
-                    else {
-                        strcpy(options_state[i], "Off");
-                    }
-                    option_changed = 1;
-                    break;
-                case 4:
-                    Settings.aspect_ratio++;
-                    if (Settings.aspect_ratio >= 2) {
-                        Settings.aspect_ratio = 0;
-                    }
-                    if (Settings.aspect_ratio == 0)
-                        strcpy(options_state[i], "Full Screen");
-                    else if (Settings.aspect_ratio == 1)
-                        strcpy(options_state[i], "Best Fit (4:3)");
-                    option_changed = 1;
-                    break;
-                case 5:
-                    SND_SetNextSampleRate();
-                    if (!Settings.sound)
-                        strcpy(options_state[i], "Off");
-                    else
-                        sprintf(options_state[i], "%dHz", SND_GetCurrSampleRate());
-                    option_changed = 1;
-                    break;
-                case 6:
                     Ingame_Menu_Controls();
                     break;
-                case 7:
-                    Settings.current_palette++;
-                    if (Settings.current_palette >= MAXPAL) { Settings.current_palette = 0; }
-                    if (Settings.current_palette == 0)
-                        strcpy(options_state[i], "Default (FCEU)");
-                    else
-                        strcpy(options_state[i], palettes[Settings.current_palette - 1].desc);
-                    SetupNESClut();
-                    gsKit_texture_upload(gsGlobal, &NES_TEX);
-                    option_changed = 1;
-                    break;
-                case 8:
+                case 4:
                     FCEUI_ResetNES();
                     SetupNESGS();
                     return;
-                case 9:
+                case 5:
                     SetupNESGS();
                     return;
-                case 10:
+                case 6:
                     fdsswap = 0;
                     statenum = 0;
                     exitgame = 1;
@@ -708,7 +595,7 @@ static int menu_input_controls(int port, int is_changing_button, u32 *new_button
                 if (new_pad[port] & PAD_UP) {
                     change = -1;
                 }
-                if (new_pad[port] & PAD_CIRCLE) {
+                if (new_pad[port] & PAD_CROSS) {
                     selected = 1;
                 }
                 if ((new_pad[port] == Settings.PlayerInput[port][0]

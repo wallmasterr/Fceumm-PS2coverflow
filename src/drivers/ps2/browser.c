@@ -144,7 +144,7 @@ int RomBrowserInput(int files_too, int inside_menu)
         if (new_pad[0] & PAD_TRIANGLE) {
             oldselect = -4;
         }
-        if (new_pad[0] & PAD_CIRCLE) {
+        if (new_pad[0] & PAD_CROSS) {
             selected = 1;
         }
         if ((new_pad[0] & PAD_START) && inside_menu && !files_too) {
