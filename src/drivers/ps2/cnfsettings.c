@@ -1,5 +1,8 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <libpad.h>
 #include <fileXio_rpc.h>
 
@@ -62,8 +65,6 @@ extern int mountPartition(char *name);
 //---------------------------------------------------------------------------
 **/
 
-int true = 1;
-int false = 0;
 int CNF_edited = 0;
 
 int get_CNF_string(char **CNF_p_p, char **name_p_p, char **value_p_p)
@@ -72,10 +73,10 @@ int get_CNF_string(char **CNF_p_p, char **name_p_p, char **value_p_p)
 
 start_line:
     while ((*tp<=' ') && (*tp>'\0')) tp+=1; // Skip leading whitespace, if any
-    if (*tp=='\0') return false;            // but exit at EOF
+    if (*tp=='\0') return 0;                // but exit at EOF
     np = tp;                                // Current pos is potential name
     if (*tp<'A') {                          // but may be a comment line
-        while ((*tp!='\r')&&(*tp!='\n')&&(tp!='\0'))
+        while ((*tp!='\r')&&(*tp!='\n')&&(*tp!='\0'))
             tp+=1;                          // Seek line end to skip comment
 
         goto start_line;                    // Go back to try next line
@@ -84,17 +85,17 @@ start_line:
     while ((*tp>='A')||((*tp>='0')&&(*tp<='9')))
         tp+=1;                              // Seek name end
 
-    if (*tp=='\0') return false;            // but exit at EOF
+    if (*tp=='\0') return 0;                // but exit at EOF
     *tp++ = '\0';                           // terminate name string (passing)
     while ((*tp<=' ') && (*tp>'\0')) tp+=1; // Skip post-name whitespace, if any
-    if (*tp!='=') return false;             // exit (syntax error) if '=' missing
+    if (*tp!='=') return 0;                 // exit (syntax error) if '=' missing
     tp += 1;                                // skip '='
     while ((*tp<=' ') && (*tp>'\0')         // Skip pre-value whitespace, if any
     && (*tp!='\r') && (*tp!='\n'))tp+=1;    // but do not pass the end of the line
-    if (*tp=='\0') return false;            // but exit at EOF
+    if (*tp=='\0') return 0;                // but exit at EOF
     vp = tp;                                // Current pos is potential value
 
-    while ((*tp!='\r')&&(*tp!='\n')&&(tp!='\0'))
+    while ((*tp!='\r')&&(*tp!='\n')&&(*tp!='\0'))
         tp+=1;                              // Seek line end
 
     if (*tp!='\0') *tp++ = '\0';            // terminate value (passing if not EOF)
@@ -103,13 +104,14 @@ start_line:
     *CNF_p_p = tp;                          // return new CNF file position
     *name_p_p = np;                         // return found variable name
     *value_p_p = vp;                        // return found variable value
-    return true;                            // return control to caller
+    return 1;                               // return control to caller
 }  // Ends get_CNF_string
 
 //---------------------------------------------------------------------------
 void Load_Global_CNF(char *CNF_path_p)
 {
     int fd, var_cnt = 0;
+    int use_filexio = 0;
     size_t CNF_size;
     char  *RAM_p, *CNF_p, *name, *value;
     char *p;
@@ -138,15 +140,18 @@ void Load_Global_CNF(char *CNF_path_p)
 
             printf("partpath: %s\n", CNF_path_p);
             fd = fileXioOpen(CNF_path_p, O_RDONLY, 0);
+            if (fd >= 0)
+                use_filexio = 1;
         }
     }
     else {
-        fd = fioOpen(CNF_path_p, O_RDONLY);
+        fd = open(CNF_path_p, O_RDONLY, 0);
     }
     if (fd < 0) {
         printf("Load_CNF %s Open failed %d.\r\n", CNF_path_p, fd);
         strcpy(CNF_path_p, "mc0:/FCEUMM/FCEUltra.cnf");
-        fd = fioOpen(CNF_path_p, O_RDONLY);
+        fd = open(CNF_path_p, O_RDONLY, 0);
+        use_filexio = 0;
         if (fd < 0) {
             printf("Load_CNF %s Open failed %d.\r\n", CNF_path_p, fd);
             return;
@@ -160,15 +165,25 @@ void Load_Global_CNF(char *CNF_path_p)
     // The above cuts away the cnf filename from CNF_path_p and last '/', leaving a pure path
     FCEUI_SetBaseDirectory(CNF_path_p);
 
-    CNF_size = fioLseek(fd, 0, SEEK_END);
-    fioLseek(fd, 0, SEEK_SET);
+    if (use_filexio) {
+        CNF_size = (size_t)fileXioLseek(fd, 0, SEEK_END);
+        fileXioLseek(fd, 0, SEEK_SET);
+    } else {
+        CNF_size = (size_t)lseek(fd, 0, SEEK_END);
+        lseek(fd, 0, SEEK_SET);
+    }
     CNF_p = (RAM_p = malloc(CNF_size + 1));
     if (CNF_p == NULL) {
-        printf("Load_CNF failed malloc(%d).\r\n", CNF_size);
+        printf("Load_CNF failed malloc(%d).\r\n", (int)CNF_size);
         return;
     }
-    fioRead(fd, CNF_p, CNF_size);
-    fioClose(fd);
+    if (use_filexio) {
+        fileXioRead(fd, CNF_p, (int)CNF_size);
+        fileXioClose(fd);
+    } else {
+        read(fd, CNF_p, CNF_size);
+        close(fd);
+    }
     CNF_p[CNF_size] = '\0';
 
     for (var_cnt = 0; get_CNF_string(&CNF_p, &name, &value); var_cnt++) {
@@ -302,7 +317,7 @@ void Load_Global_CNF(char *CNF_path_p)
     }
 
     if (strlen(CNF_p))  //Was there any unprocessed CNF remainder ?
-        CNF_edited = false;  //false == current settings match CNF file
+        CNF_edited = 0;  //false == current settings match CNF file
     else
         printf("Syntax error in CNF file at position %d.\r\n", (CNF_p - RAM_p));
 
@@ -317,20 +332,20 @@ void Load_Skin_CNF(char *CNF_path_p)
     size_t CNF_size;
     char  *RAM_p, *CNF_p, *name, *value;
 
-    fd = fioOpen(CNF_path_p, O_RDONLY);
+    fd = open(CNF_path_p, O_RDONLY, 0);
     if (fd < 0) {
         printf("Load_CNF %s Open failed %d.\r\n", CNF_path_p, fd);
         return;
     }
-    CNF_size = fioLseek(fd, 0, SEEK_END);
-    fioLseek(fd, 0, SEEK_SET);
+    CNF_size = (size_t)lseek(fd, 0, SEEK_END);
+    lseek(fd, 0, SEEK_SET);
     CNF_p = (RAM_p = malloc(CNF_size + 1));
     if (CNF_p == NULL) {
-        printf("Load_CNF failed malloc(%d).\r\n", CNF_size);
+        printf("Load_CNF failed malloc(%d).\r\n", (int)CNF_size);
         return;
     }
-    fioRead(fd, CNF_p, CNF_size);
-    fioClose(fd);
+    read(fd, CNF_p, CNF_size);
+    close(fd);
     CNF_p[CNF_size] = '\0';
 
     for (var_cnt = 0; get_CNF_string(&CNF_p, &name, &value); var_cnt++) {
@@ -348,7 +363,7 @@ void Load_Skin_CNF(char *CNF_path_p)
     }
 
     /*if (strlen(CNF_p))  // Was there any unprocessed CNF remainder ?
-        CNF_edited = false;  // false == current settings match CNF file
+        CNF_edited = 0;  // false == current settings match CNF file
     else
         printf("Syntax error in CNF file at position %d.\r\n", (CNF_p - RAM_p));*/
 
@@ -392,14 +407,14 @@ void Save_Skin_CNF(char *CNF_path_p)
         FCEUSkin.bgMenu,
         &CNF_size);
     // Note that the final argument above measures accumulated string size,
-    // used for fioWrite below, so it's not one of the config variables.
+    // used for write below, so it's not one of the config variables.
 
-    fd = fioOpen(CNF_path_p, O_CREAT | O_WRONLY | O_TRUNC);
+    fd = open(CNF_path_p, O_CREAT | O_WRONLY | O_TRUNC, 0666);
     if (fd >= 0) {
-        if (CNF_size == fioWrite(fd, CNF_p, CNF_size))
-            CNF_edited = false;
+        if ((size_t)write(fd, CNF_p, CNF_size) == CNF_size)
+            CNF_edited = 0;
 
-        fioClose(fd);
+        close(fd);
     }
 
     free(CNF_p);
@@ -575,14 +590,14 @@ void Save_Global_CNF(char *CNF_path_p)
         Settings.PlayerInput[3][14],
         &CNF_size);
     // Note that the final argument above measures accumulated string size,
-    // used for fioWrite below, so it's not one of the config variables.
+    // used for write below, so it's not one of the config variables.
 
-    fd = fioOpen(CNF_path_p, O_CREAT | O_WRONLY | O_TRUNC);
+    fd = open(CNF_path_p, O_CREAT | O_WRONLY | O_TRUNC, 0666);
     if (fd >= 0) {
-        if (CNF_size == fioWrite(fd, CNF_p, CNF_size))
-            CNF_edited = false;
+        if ((size_t)write(fd, CNF_p, CNF_size) == CNF_size)
+            CNF_edited = 0;
 
-        fioClose(fd);
+        close(fd);
     }
     
     free(CNF_p);

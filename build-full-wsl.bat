@@ -12,7 +12,8 @@ if errorlevel 1 (
 )
 
 for /f "usebackq delims=" %%i in (`wsl wslpath -a "%CD%"`) do set "WSLDIR=%%i"
-rem Use "wsl bash" (not -e) so the script always runs under bash; CRLF breaks "pipefail" and shebang.
+rem Editor/Windows often saves *.sh as CRLF; bash then errors on "set -o pipefail"
+for %%f in (*.sh) do wsl sed -i "s/\r$//" "!WSLDIR!/%%~nxf"
 wsl bash -- "!WSLDIR!/wsl-build-deps-and-emu.sh"
 set "ERR=!errorlevel!"
 if not "!ERR!"=="0" exit /b !ERR!

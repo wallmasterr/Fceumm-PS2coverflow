@@ -1,6 +1,4 @@
 #include <stdio.h>
-#include <fileio.h>
-#include <io_common.h>
 #include <sys/stat.h>
 #include <libpad.h>
 #include <dmaKit.h>
@@ -64,7 +62,15 @@ extern int FONT_HEIGHT;
 
 //void font_print(GSGLOBAL *gsGlobal, float X, float Y, int Z, unsigned long color, char *String);
 
-static inline char* strzncpy(char *d, const char *s, size_t l) { d[0] = 0; return strncat(d, s, l); }
+static inline char *strzncpy(char *d, const char *s, size_t l)
+{
+    if (l == 0) {
+        d[0] = '\0';
+        return d;
+    }
+    snprintf(d, l + 1, "%s", s ? s : "");
+    return d;
+}
 
 void menu_background(float x1, float y1, float x2, float y2, int z)
 {
@@ -322,7 +328,7 @@ int Browser_Menu()
 
             DrawScreen(gsGlobal);
 
-            if (power_off)
+            if (power_off) {
                 option_changed = 1;
                 power_off--;
                 if (!power_off) {
@@ -332,6 +338,7 @@ int Browser_Menu()
                     if (File != NULL)
                         fclose(File);
                 }
+            }
         }
 
         oldselect = selection;
@@ -435,7 +442,7 @@ int Browser_Menu()
                     selected = 0;
                     break;
                 case 8: // Save CNF
-                    fioMkdir("mc0:FCEUMM");
+                    mkdir("mc0:/FCEUMM", 0777);
                     Save_Global_CNF("mc0:/FCEUMM/FCEUltra.cnf");
                     break;
                 case 9: // Power Off
@@ -774,14 +781,15 @@ static void Ingame_Menu_Controls()
         { "Joy Turbo A | " },
         { "Joy Turbo B | " }
     };
-    char options_state[CONTROLS_N][16] = { { 0 } };
-    char options_buffer[32+16] = { 0 };
+    char options_state[CONTROLS_N][32] = { { 0 } };
+    char options_buffer[64] = { 0 };
 
     int player = 0;
     int is_changing_button = 0;
     u32 new_button = 0;
 
-    sprintf(options_state[1], "1 on, %d off", Settings.autofire_pattern + 1);
+    snprintf(options_state[1], sizeof options_state[1], "1 on, %d off",
+             (int)Settings.autofire_pattern + 1);
     if (Settings.input_4p_adaptor)
         strcpy(options_state[2], "On");
     else
@@ -837,7 +845,8 @@ static void Ingame_Menu_Controls()
                 if (Settings.autofire_pattern >= 5) {
                     Settings.autofire_pattern = 0;
                 }
-                sprintf(options_state[1], "1 on, %d off", Settings.autofire_pattern + 1);
+                snprintf(options_state[1], sizeof options_state[1], "1 on, %d off",
+                         (int)Settings.autofire_pattern + 1);
                 option_changed = 1;
             }
             else if (i == 2) {

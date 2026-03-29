@@ -8,7 +8,7 @@ EE_BIN = fceu.elf
 EE_PACKED_BIN = fceu-packed.elf
 ZLIB_DIR := ./src/zlib
 ENDIANNESS_DEFINES = -DLSB_FIRST -DLOCAL_LE=1
-PLATFORM_DEFINES = -D__PS2__ -DHAVE_ASPRINTF -Dmemcpy=mips_memcpy -Dmemset=mips_memset
+PLATFORM_DEFINES = -D__PS2__ -Dmemcpy=mips_memcpy -Dmemset=mips_memset
 
 #Nor stripping neither compressing binary ELF after compiling.
 NOT_PACKED ?= 0
@@ -26,10 +26,12 @@ FCEU_DEFINES := -DPATH_MAX=1024 -DINLINE=inline -DPSS_STYLE=1 -DFCEU_VERSION_NUM
 #EE_CFLAGS += -finline-functions -funroll-loops
 EE_CFLAGS += -ffast-math  -funroll-loops -fomit-frame-pointer -fstrict-aliasing -funsigned-char -fno-builtin-printf
 EE_CFLAGS += $(FCEU_DEFINES) $(ENDIANNESS_DEFINES)
+EE_CFLAGS += -msingle-float
 EE_LDFLAGS = -L$(GSKIT)/lib
 
 EE_INCS = -I$(PS2SDK)/ee/include -I$(PS2SDK)/sbv/include -I$(PS2SDK)/ports/include \
 	-I$(GSKIT)/include -I$(GSKIT)/ee/dma/include -I$(GSKIT)/ee/gs/include -I$(GSKIT)/ee/toolkit/include
+# libpng (gsKit) needs ps2sdk-ports zlib (e.g. inflateReset2). Core still builds src/zlib/unzip.c only.
 EE_LIBS = -lgskit_toolkit -lgskit -ldmakit -ljpeg -lpng -lz -lm -lfileXio -lhdd -lmc -lpadx -lc -lmtap -laudsrv -lpoweroff -lpatches -ldebug
 
 ifeq ($(CDSUPPORT),1)
@@ -47,7 +49,7 @@ default: all
 all: $(EE_BIN)
 	$(EE_STRIP) $(EE_BIN)
 ifneq ($(NOT_PACKED),1)
-	ps2-packer $(EE_BIN) $(EE_PACKED_BIN)
+	$(PS2_PACKER) $(EE_BIN) $(EE_PACKED_BIN)
 endif
 
 PS2_DIR := ./src/drivers/ps2
@@ -65,7 +67,7 @@ endif
 DRIVER_OBJS += freesio2_irx.o mcman_irx.o mcserv_irx.o freemtap_irx.o freepad_irx.o
 DRIVER_OBJS := $(DRIVER_OBJS:%=$(PS2_DIR)/irx/%)
 DRIVER_OBJS += $(PS2_DIR)/SMS_Utils.o
-DRIVER_CFLAGS := -D_EE -DSOUND_ON -O2 -G0 -Wall $(PLATFORM_DEFINES)
+DRIVER_CFLAGS := -D_EE -DSOUND_ON -DNEWLIB_PORT_AWARE -O2 -G0 -Wall -msingle-float $(PLATFORM_DEFINES)
 #DRIVER_CFLAGS := -D_EE -O2 -G0 -Wall $(PLATFORM_DEFINES)
 ifeq ($(CDSUPPORT),1)
 	DRIVER_CFLAGS += -DCDSUPPORT
@@ -73,15 +75,24 @@ ifeq ($(CDSUPPORT),1)
 endif
 
 
-FCEU_SRC_DIRS := $(PS2_DIR) $(FCEU_DIR) $(FCEU_DIR)/boards $(FCEU_DIR)/input  $(FCEU_DIR)/mappers $(ZLIB_DIR)
+FCEU_SRC_DIRS := $(PS2_DIR) $(FCEU_DIR) $(FCEU_DIR)/boards $(FCEU_DIR)/input  $(FCEU_DIR)/mappers
 
 FCEU_CSRCS := $(foreach dir,$(FCEU_SRC_DIRS),$(wildcard $(dir)/*.c))
 FCEU_COBJ := $(FCEU_CSRCS:.c=.o)
 
-EE_OBJS = $(FCEU_COBJ) $(DRIVER_OBJS)
+UNZIP_OBJ := $(ZLIB_DIR)/unzip.o
+
+EE_OBJS = $(FCEU_COBJ) $(UNZIP_OBJ) $(DRIVER_OBJS)
 
 $(PS2_DIR)/ps2input.o: $(PS2_DIR)/ps2input.c
 	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+$(ZLIB_DIR)/unzip.o: $(ZLIB_DIR)/unzip.c
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+# Match EE/LTO -msingle-float (default .s build used -mdouble-float and broke the link).
+$(PS2_DIR)/SMS_Utils.o: $(PS2_DIR)/SMS_Utils.s
+	$(EE_CC) -x assembler-with-cpp $(EE_CFLAGS) $(DRIVER_CFLAGS) -msingle-float -c $< -o $@
 
 #$(PS2_DIR)/main.o: $(PS2_DIR)/main.c+
 #	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
@@ -158,3 +169,9 @@ clean:
 #include Makefile.eeglobal
 include $(PS2SDK)/samples/Makefile.pref
 include $(PS2SDK)/samples/Makefile.eeglobal
+
+# ps2-packer is often not on PATH; try next to PS2SDK (standard ps2dev layout).
+PS2_PACKER := $(firstword $(wildcard $(PS2SDK)/bin/ps2-packer $(dir $(PS2SDK))bin/ps2-packer))
+ifeq ($(strip $(PS2_PACKER)),)
+PS2_PACKER := ps2-packer
+endif

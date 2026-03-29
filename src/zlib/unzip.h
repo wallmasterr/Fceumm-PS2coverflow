@@ -45,8 +45,8 @@
 extern "C" {
 #endif
 
-#ifndef _ZLIB_H
-#include "zlib.h"
+#if !defined(ZLIB_H) && !defined(_ZLIB_H)
+#include <zlib.h>
 #endif
 
 #if defined(STRICTUNZIP) || defined(STRICTZIPUNZIP)

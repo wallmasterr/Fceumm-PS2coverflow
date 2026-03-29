@@ -2,6 +2,12 @@ int InitNetplay(void);
 void NetplayUpdate(uint8 *joyp);
 extern int FCEUnetplay;
 
+#if defined(__PS2__) && !defined(NETWORK)
+void FCEUD_NetworkClose(void);
+int FCEUD_SendData(void *data, uint32 len);
+int FCEUD_RecvData(void *data, uint32 len);
+void FCEUD_NetplayText(uint8 *text);
+#endif
 
 #define FCEUNPCMD_RESET       0x01
 #define FCEUNPCMD_POWER       0x02

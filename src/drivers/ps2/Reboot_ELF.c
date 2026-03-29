@@ -7,10 +7,10 @@
 #include <kernel.h>
 #include <sifrpc.h>
 #include <string.h>
-#include <fileio.h>
 #include <sys/stat.h>
 #include <fileXio_rpc.h>
 #include <sys/fcntl.h>
+#include "ps2_ioman_compat.h"
 
 // ELF-loading stuff
 #define ELF_MAGIC		0x464c457f
@@ -1924,7 +1924,6 @@ void RunLoaderElf(char *filename, char *party)
 	}
 
 /* Let's go.  */
-	fioExit();
 	SifInitRpc(0);
 	SifExitRpc();
 	FlushCache(0);

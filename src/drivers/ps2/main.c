@@ -1,7 +1,6 @@
 #include <stdio.h>
-#include <fileio.h>
 #include <string.h>
-#include <libjpg.h>
+#include <malloc.h>
 
 // FCEUltra headers
 #include "../../driver.h"
@@ -667,34 +666,14 @@ int main(int argc, char *argv[])
     }
 
     // Setup GUI Textures
-    jpgData *Jpg;
-    u8 *ImgData;
     if (strstr(FCEUSkin.bgTexture, ".png") != NULL) {
          if (gsKit_texture_png(gsGlobal, &BG_TEX, FCEUSkin.bgTexture) < 0) {
             printf("Error with browser background png!\n");
             bgtex = 1;
          }
     }
-    else if (strstr(FCEUSkin.bgTexture, ".jpg") || strstr(FCEUSkin.bgTexture, ".jpeg") != NULL){
-        //if (gsKit_texture_jpeg(gsGlobal, &BG_TEX, FCEUSkin.bgTexture) < 0) {
-        FILE *File = fopen(FCEUSkin.bgTexture, "r");
-        if (File != NULL) {
-            Jpg = jpgOpenFILE(File, JPG_WIDTH_FIX); // > 0)
-            ImgData = malloc(Jpg->width * Jpg->height * (Jpg->bpp / 8)); // > 0)
-            jpgReadImage(Jpg, ImgData);
-            BG_TEX.PSM = GS_PSM_CT24;
-            BG_TEX.Clut = NULL;
-            BG_TEX.VramClut = 0;
-            BG_TEX.Width = Jpg->width;
-            BG_TEX.Height = Jpg->height;
-            BG_TEX.Filter = GS_FILTER_LINEAR;
-            BG_TEX.Mem = memalign(128, gsKit_texture_size_ee(BG_TEX.Width, BG_TEX.Height, BG_TEX.PSM));
-            BG_TEX.Mem = (void*)ImgData;
-            BG_TEX.Vram = gsKit_vram_alloc(gsGlobal, gsKit_texture_size(BG_TEX.Width, BG_TEX.Height, BG_TEX.PSM), GSKIT_ALLOC_USERBUFFER);
-            gsKit_texture_upload(gsGlobal, &BG_TEX);
-            free(BG_TEX.Mem);
-        }
-        else {
+    else if (strstr(FCEUSkin.bgTexture, ".jpg") != NULL || strstr(FCEUSkin.bgTexture, ".jpeg") != NULL) {
+        if (gsKit_texture_jpeg(gsGlobal, &BG_TEX, FCEUSkin.bgTexture) < 0) {
             printf("Error with browser background jpg!\n");
             bgtex = 1;
         }
@@ -703,37 +682,16 @@ int main(int argc, char *argv[])
         bgtex = 1;
     }
 
-    Jpg = 0;
-    ImgData = 0;
-
     if (strstr(FCEUSkin.bgMenu, ".png") != NULL) {
         if (gsKit_texture_png(gsGlobal, &MENU_TEX, FCEUSkin.bgMenu) == -1) {
             printf("Error with menu background png!\n");
             menutex = 1;
         }
     }
-    else if (strstr(FCEUSkin.bgMenu, ".jpg") || strstr(FCEUSkin.bgMenu, ".jpeg") != NULL) {
-        //if (gsKit_texture_jpeg(gsGlobal, &MENU_TEX, FCEUSkin.bgMenu) < 0) { // Apparently didn't like the "myps2" libjpg
-        FILE *File = fopen(FCEUSkin.bgMenu, "r");
-        if (File != NULL) {
-            Jpg = jpgOpenFILE(File, JPG_WIDTH_FIX); // > 0)
-            ImgData = malloc(Jpg->width * Jpg->height * (Jpg->bpp / 8)); // > 0)
-            jpgReadImage(Jpg, ImgData);
-            MENU_TEX.PSM = GS_PSM_CT24;
-            MENU_TEX.Clut = NULL;
-            MENU_TEX.VramClut = 0;
-            MENU_TEX.Width = Jpg->width;
-            MENU_TEX.Height = Jpg->height;
-            MENU_TEX.Filter = GS_FILTER_LINEAR;
-            MENU_TEX.Mem = memalign(128, gsKit_texture_size_ee(MENU_TEX.Width, MENU_TEX.Height, MENU_TEX.PSM));
-            MENU_TEX.Mem = (void*)ImgData;
-            MENU_TEX.Vram = gsKit_vram_alloc(gsGlobal, gsKit_texture_size(MENU_TEX.Width, MENU_TEX.Height, MENU_TEX.PSM), GSKIT_ALLOC_USERBUFFER);
-            gsKit_texture_upload(gsGlobal, &MENU_TEX);
-            free(MENU_TEX.Mem);
-        }
-        else {
+    else if (strstr(FCEUSkin.bgMenu, ".jpg") != NULL || strstr(FCEUSkin.bgMenu, ".jpeg") != NULL) {
+        if (gsKit_texture_jpeg(gsGlobal, &MENU_TEX, FCEUSkin.bgMenu) < 0) {
             printf("Error with menu background jpg!\n");
-            menutex =1;
+            menutex = 1;
         }
     }
     else {

@@ -1,11 +1,12 @@
 #include <stdio.h>
-#include <fileio.h>
+#include <stdlib.h>
+#include <dirent.h>
+#include <string.h>
 #include <fileXio.h>
 #include <fileXio_rpc.h>
 #include <libhdd.h>
-#include <io_common.h>
-#include <sys/fcntl.h>
 #include <sys/stat.h>
+#include "ps2_ioman_compat.h"
 #include <libpad.h>
 #include <dmaKit.h>
 #include <gsKit.h>
@@ -51,6 +52,15 @@ static int first_file_index;
 extern int Browser_Menu();
 
 static inline char* strzncpy(char *d, const char *s, size_t l) { d[0] = 0; return strncat(d, s, l); }
+
+static void join_ps2_path(char *out, size_t outsz, const char *dir, const char *name)
+{
+    size_t len = strlen(dir);
+    if (len > 0 && dir[len - 1] == '/')
+        snprintf(out, outsz, "%s%s", dir, name);
+    else
+        snprintf(out, outsz, "%s/%s", dir, name);
+}
 
 static int comp_entries_by_filename(const void *elem1, const void *elem2)
 {
@@ -209,8 +219,7 @@ int listcdvd(const char *path, entries *FileEntry) {
 
 int listdir(char *path, entries *FileEntry, int files_too)
 {
-    int dd, n = 0;
-    fio_dirent_t buf;
+    int n = 0;
 
     if (!(strchr(path, '/'))) { // If path is not valid then load default device menu
         strcpy(FileEntry[0].displayname, "mc0:");
@@ -237,56 +246,62 @@ int listdir(char *path, entries *FileEntry, int files_too)
 #endif
     }
     else { // It has a /
-        dd = fioDopen(path);
-        if (dd < 0) {
+        DIR *dir;
+        struct dirent *ent;
+        char fullpath[1024];
+        struct stat st;
+
+        dir = opendir(path);
+        if (dir == NULL) {
             printf("Didn't open!\n");
             return 0;
         }
-        else {
-            printf("Directory opened!\n");
-            // Adds pseudo folder .. to every folder opened as mass: reported none but mc0: did
-            strcpy(FileEntry[0].filename, "..");
-            strcpy(FileEntry[0].displayname, "..");
-            FileEntry[0].dircheck = 1;
-            n = 1;
-            while (fioDread(dd, &buf) > 0) {
-                if (n > FILEENTRY_SIZE - 2) { break; }
-                if ((FIO_SO_ISDIR(buf.stat.mode)) && (!strcmp(buf.name, ".") || !strcmp(buf.name, "..")))
-                    continue; // Makes sure no .. or .'s are listed since it's already there
-                if (FIO_SO_ISDIR(buf.stat.mode)) {
-                    FileEntry[n].dircheck = 1;
-                    strcpy(FileEntry[n].filename, buf.name);
+        printf("Directory opened!\n");
+        strcpy(FileEntry[0].filename, "..");
+        strcpy(FileEntry[0].displayname, "..");
+        FileEntry[0].dircheck = 1;
+        n = 1;
+        while ((ent = readdir(dir)) != NULL) {
+            if (n > FILEENTRY_SIZE - 2)
+                break;
+            if (!strcmp(ent->d_name, ".") || !strcmp(ent->d_name, ".."))
+                continue;
+            join_ps2_path(fullpath, sizeof fullpath, path, ent->d_name);
+            if (stat(fullpath, &st) < 0)
+                continue;
+            if (S_ISDIR(st.st_mode)) {
+                FileEntry[n].dircheck = 1;
+                strcpy(FileEntry[n].filename, ent->d_name);
+                strzncpy(FileEntry[n].displayname, FileEntry[n].filename, 63);
+                n++;
+            }
+        }
+        closedir(dir);
+        printf("Directory closed!\n");
+        qsort(FileEntry, n, sizeof(entries), comp_entries_by_filename);
+        if (files_too) {
+            first_file_index = n;
+            dir = opendir(path);
+            if (dir == NULL)
+                return n;
+            while ((ent = readdir(dir)) != NULL) {
+                if (n > FILEENTRY_SIZE - 2)
+                    break;
+                if (!strcmp(ent->d_name, ".") || !strcmp(ent->d_name, ".."))
+                    continue;
+                join_ps2_path(fullpath, sizeof fullpath, path, ent->d_name);
+                if (stat(fullpath, &st) < 0)
+                    continue;
+                if (S_ISREG(st.st_mode)) {
+                    FileEntry[n].dircheck = 0;
+                    strcpy(FileEntry[n].filename, ent->d_name);
                     strzncpy(FileEntry[n].displayname, FileEntry[n].filename, 63);
                     n++;
-                    if (n >= FILEENTRY_SIZE - 2)
-                        break;
                 }
             }
-            if (dd >= 0) {
-                fioDclose(dd);
-                printf("Directory closed!\n");
-            }
-            qsort(FileEntry, n, sizeof(entries), comp_entries_by_filename);
-            if (files_too) {
-                first_file_index = n;
-                dd = 0;
-                dd = fioDopen(path);
-                while (fioDread(dd, &buf) > 0) {
-                    if (n > FILEENTRY_SIZE - 2) { break; }
-                    if (FIO_SO_ISREG(buf.stat.mode)) {
-                        FileEntry[n].dircheck = 0;
-                        strcpy(FileEntry[n].filename, buf.name);
-                        strzncpy(FileEntry[n].displayname, FileEntry[n].filename, 63);
-                        n++;
-                    }
-                }
-                if (dd >= 0) {
-                    fioDclose(dd);
-                    printf("Directory closed!\n");
-                }
-                qsort(FileEntry + first_file_index, n - first_file_index, sizeof(entries), comp_entries_by_filename);
-            }
-
+            closedir(dir);
+            printf("Directory closed!\n");
+            qsort(FileEntry + first_file_index, n - first_file_index, sizeof(entries), comp_entries_by_filename);
         }
         printf("listdir path = %s\n", path);
     }

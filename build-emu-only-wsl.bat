@@ -10,5 +10,6 @@ if errorlevel 1 (
 )
 
 for /f "usebackq delims=" %%i in (`wsl wslpath -a "%CD%"`) do set "WSLDIR=%%i"
+for %%f in (*.sh) do wsl sed -i "s/\r$//" "!WSLDIR!/%%~nxf"
 wsl bash -- "!WSLDIR!/build-wsl-inner.sh" nopack
 exit /b %errorlevel%

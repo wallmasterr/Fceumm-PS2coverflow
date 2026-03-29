@@ -28,14 +28,16 @@ if "!WSLDIR!"=="" (
 echo WSL project path: !WSLDIR!
 echo.
 
+for %%f in (*.sh) do wsl sed -i "s/\r$//" "!WSLDIR!/%%~nxf"
+
 if /i "%~1"=="clean" (
-  wsl -e bash "!WSLDIR!/build-wsl-inner.sh" clean
+  wsl bash -- "!WSLDIR!/build-wsl-inner.sh" clean
   set "ERR=!errorlevel!"
   goto done
 )
 
 if /i "%~1"=="nopack" (
-  wsl -e bash "!WSLDIR!/build-wsl-inner.sh" nopack
+  wsl bash -- "!WSLDIR!/build-wsl-inner.sh" nopack
   set "ERR=!errorlevel!"
   goto done
 )
@@ -47,7 +49,7 @@ if not "%~1"=="" (
   goto done
 )
 
-wsl -e bash "!WSLDIR!/build-wsl-inner.sh" build
+wsl bash -- "!WSLDIR!/build-wsl-inner.sh" build
 set "ERR=!errorlevel!"
 
 :done

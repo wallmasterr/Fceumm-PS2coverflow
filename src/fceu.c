@@ -285,7 +285,7 @@ FCEUGI *FCEUI_CopyFamiStart(void) {
 
 	GameInfo->soundchan = 0;
 	GameInfo->soundrate = 0;
-	GameInfo->name = "copyfami";
+	GameInfo->name = (uint8 *)strdup("copyfami");
 	GameInfo->type = GIT_CART;
 	GameInfo->vidsys = GIV_USER;
 	GameInfo->input[0] = GameInfo->input[1] = -1;
@@ -339,11 +339,11 @@ void FCEUI_Kill(void) {
 }
 
 void FCEUI_Emulate(uint8 **pXBuf, int32 **SoundBuf, int32 *SoundBufSize, int skip) {
-	int r, ssize;
+	int ssize;
 
 	FCEU_UpdateInput();
 	if (geniestage != 1) FCEU_ApplyPeriodicCheats();
-	r = FCEUPPU_Loop(skip);
+	FCEUPPU_Loop(skip);
 
 	ssize = FlushEmulateSound();
 
