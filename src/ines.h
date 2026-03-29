@@ -54,6 +54,7 @@ void Mapper23_Init(CartInfo *);
 void Mapper24_Init(CartInfo *);
 void Mapper25_Init(CartInfo *);
 void Mapper26_Init(CartInfo *);
+void Mapper30_Init(CartInfo *);
 void Mapper32_Init(CartInfo *);
 void Mapper33_Init(CartInfo *);
 void Mapper34_Init(CartInfo *);
