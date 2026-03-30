@@ -52,6 +52,39 @@ extern u8 exitgame;
 extern int FONT_HEIGHT;
 
 //void font_print(GSGLOBAL *gsGlobal, float X, float Y, int Z, unsigned long color, char *String);
+static const u64 MENU_TEXT_NORMAL = GS_SETREG_RGBA(0x00, 0x00, 0x00, 0x00);
+static const u64 MENU_TEXT_HIGHLIGHT = GS_SETREG_RGBA(0xff, 0xff, 0xff, 0x00);
+static const int MENU_TITLE_TOP_PADDING = 10;
+static const int MENU_ITEMS_TOP_PADDING = 10;
+static const int MENU_LINE_HEIGHT = FONT_HEIGHT + 2;
+
+static int menu_text_center_x(const char *s, float x1, float x2)
+{
+    int w = (int)strlen(s) * 8;
+    int cx = (int)((x1 + x2) * 0.5f) - (w / 2);
+    if (cx < (int)x1 + 8)
+        cx = (int)x1 + 8;
+    return cx;
+}
+
+static void menu_draw_dim_overlay(void)
+{
+    /* Disabled per request. */
+}
+
+static void menu_print_text(const char *s, int x, int y, int z, u64 color, int emphasis)
+{
+    printXY(s, x, y, z, color, 1, 0);
+    if (emphasis >= 1) {
+        printXY(s, x + 1, y, z, color, 1, 0);
+        printXY(s, x, y + 1, z, color, 1, 0);
+    }
+    if (emphasis >= 2) {
+        printXY(s, x + 1, y + 1, z, color, 1, 0);
+        printXY(s, x + 2, y + 1, z, color, 1, 0);
+        printXY(s, x + 1, y + 2, z, color, 1, 0);
+    }
+}
 
 static inline char *strzncpy(char *d, const char *s, size_t l)
 {
@@ -66,20 +99,20 @@ static inline char *strzncpy(char *d, const char *s, size_t l)
 void menu_background(float x1, float y1, float x2, float y2, int z)
 {
     int thickness = 3;
-    u64 red = GS_SETREG_RGBA(0xff, 0x00, 0x00, 0x00);
+    u64 grey = GS_SETREG_RGBA(0x55, 0x55, 0x55, 0x00);
 
     gsKit_prim_sprite(gsGlobal, x1, y1, x2, y1+thickness, z, FCEUSkin.frame);
     gsKit_prim_sprite(gsGlobal, x1, y1, x1+thickness, y2, z, FCEUSkin.frame);
     gsKit_prim_sprite(gsGlobal, x2-thickness, y1, x2, y2, z, FCEUSkin.frame);
     gsKit_prim_sprite(gsGlobal, x1, y2-thickness, x2, y2, z, FCEUSkin.frame);
 
-    gsKit_prim_sprite(gsGlobal, x1+thickness, y1+thickness, x2-thickness, y2-thickness, z+1, red);
+    gsKit_prim_sprite(gsGlobal, x1+thickness, y1+thickness, x2-thickness, y2-thickness, z+1, grey);
 }
 
 void menu_bgtexture(GSTEXTURE *gsTexture, float x1, float y1, float x2, float y2, int z)
 {
     int thickness = 3;
-    u64 red = GS_SETREG_RGBA(0xff, 0x00, 0x00, 0x00);
+    u64 grey = GS_SETREG_RGBA(0x55, 0x55, 0x55, 0x00);
 
     (void)gsTexture;
 
@@ -88,11 +121,12 @@ void menu_bgtexture(GSTEXTURE *gsTexture, float x1, float y1, float x2, float y2
     gsKit_prim_sprite(gsGlobal, x2-thickness, y1, x2, y2, z, FCEUSkin.frame);
     gsKit_prim_sprite(gsGlobal, x1, y2-thickness, x2, y2, z, FCEUSkin.frame);
 
-    gsKit_prim_sprite(gsGlobal, x1+thickness, y1+thickness, x2-thickness, y2-thickness, z+1, red);
+    gsKit_prim_sprite(gsGlobal, x1+thickness, y1+thickness, x2-thickness, y2-thickness, z+1, grey);
 }
 
 void menu_primitive(char *title, GSTEXTURE *gsTexture, float x1, float y1, float x2, float y2)
 {
+    int tx;
 
     if (!menutex || !bgtex) {
         menu_bgtexture(gsTexture, x1, y1, x2, y2, 1);
@@ -100,9 +134,8 @@ void menu_primitive(char *title, GSTEXTURE *gsTexture, float x1, float y1, float
     else {
         menu_background(x1, y1, x2, y2, 1);
     }
-    menu_background(x2-(strlen(title)*12), y1, x2, y1+FONT_HEIGHT*2, 2);
-
-    printXY(title, x2-(strlen(title)*10), y1+FONT_HEIGHT/2, 3, FCEUSkin.textcolor, 2, 0);
+    tx = menu_text_center_x(title, x1, x2);
+    menu_print_text(title, tx, y1 + MENU_TITLE_TOP_PADDING, 3, MENU_TEXT_NORMAL, 2);
 }
 
 void browser_primitive(char *title1, char *title2, GSTEXTURE *gsTexture, float x1, float y1, float x2, float y2)
@@ -114,11 +147,8 @@ void browser_primitive(char *title1, char *title2, GSTEXTURE *gsTexture, float x
     else {
         menu_background(x1, y1, x2, y2, 1);
     }
-    menu_background(x1, y1, x1+(strlen(title1)*9), y1+FONT_HEIGHT*2, 2);
-    menu_background(x2-(strlen(title2)*12), y1, x2, y1+FONT_HEIGHT*2, 2);
-
-    printXY(title1, x1+(strlen(title2)+4), y1+FONT_HEIGHT/2, 3, FCEUSkin.textcolor, 2, 0);
-    printXY(title2, x2-(strlen(title2)*10), y1+FONT_HEIGHT/2, 3, FCEUSkin.textcolor, 2, 0);
+    menu_print_text(title1, menu_text_center_x(title1, x1, x2), y1 + MENU_TITLE_TOP_PADDING, 3, MENU_TEXT_NORMAL, 2);
+    menu_print_text(title2, menu_text_center_x(title2, x1, x2), y1 + MENU_TITLE_TOP_PADDING + FONT_HEIGHT + 2, 3, MENU_TEXT_NORMAL, 2);
 }
 
 static int menu_input(int port, int center_screen)
@@ -213,7 +243,7 @@ int Browser_Menu()
     int menu_y1 = gsGlobal->Height * 0.15;
     int menu_x2 = gsGlobal->Width  * 0.75;
     int menu_y2 = gsGlobal->Height * 0.85 + FONT_HEIGHT;
-    int text_line = menu_y1 + 4;
+    int text_line = menu_y1 + FONT_HEIGHT * 2 + MENU_ITEMS_TOP_PADDING;
 
     char options[BROWSER_MENU_N][32] = {
         { "Display: " },
@@ -286,18 +316,19 @@ int Browser_Menu()
 
             gsKit_clear(gsGlobal, GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x00, 0x00));
 
+            menu_draw_dim_overlay();
             menu_primitive("Options", &MENU_TEX, menu_x1, menu_y1, menu_x2, menu_y2);
 
             for (i = 0; i < BROWSER_MENU_N; i++) {
+                int tx;
                 strcpy(options_buffer, options[i]);
                 strcat(options_buffer, options_state[i]);
+                tx = menu_text_center_x(options_buffer, menu_x1, menu_x2);
                 if (selection == i) {
-                    //font_print(gsGlobal, menu_x1+10.0f, text_line + i*FONT_HEIGHT, 2, DarkYellowFont, options[i]);
-                    printXY(options_buffer, menu_x1+10, text_line+i*FONT_HEIGHT, 4, FCEUSkin.highlight, 1, 0);
+                    menu_print_text(options_buffer, tx, text_line + i * MENU_LINE_HEIGHT, 4, MENU_TEXT_HIGHLIGHT, 1);
                 }
                 else {
-                    //font_print(gsGlobal, menu_x1+10.0f, text_line + i*FONT_HEIGHT, 2, WhiteFont, options[i]);
-                    printXY(options_buffer, menu_x1+10, text_line + i*FONT_HEIGHT, 4, FCEUSkin.textcolor, 1, 0);
+                    menu_print_text(options_buffer, tx, text_line + i * MENU_LINE_HEIGHT, 4, MENU_TEXT_NORMAL, 1);
                 }
             }
 
@@ -458,7 +489,7 @@ void Ingame_Menu()
     int menu_x2 = gsGlobal->Width  * 0.75;
     int menu_y2 = gsGlobal->Height * 0.85 + FONT_HEIGHT;
 
-    int text_line = menu_y1 + 4;
+    int text_line = menu_y1 + FONT_HEIGHT * 2 + MENU_ITEMS_TOP_PADDING;
 
     char options[INGAME_MENU_N][32] = {
         { "State number: " },
@@ -500,16 +531,19 @@ void Ingame_Menu()
 
             option_changed = 0;
 
+            menu_draw_dim_overlay();
             menu_primitive("Options", &MENU_TEX, menu_x1, menu_y1, menu_x2, menu_y2);
 
             for (i = 0; i < INGAME_MENU_N; i++) {
+                int tx;
                 strcpy(options_buffer, options[i]);
                 strcat(options_buffer, options_state[i]);
+                tx = menu_text_center_x(options_buffer, menu_x1, menu_x2);
                 if (selection == i) {
-                    printXY(options_buffer, menu_x1+10, text_line + i*FONT_HEIGHT, 4, FCEUSkin.highlight, 1, 0);
+                    menu_print_text(options_buffer, tx, text_line + i * MENU_LINE_HEIGHT, 4, MENU_TEXT_HIGHLIGHT, 1);
                 }
                 else {
-                    printXY(options_buffer, menu_x1+10, text_line + i*FONT_HEIGHT, 4, FCEUSkin.textcolor, 1, 0);
+                    menu_print_text(options_buffer, tx, text_line + i * MENU_LINE_HEIGHT, 4, MENU_TEXT_NORMAL, 1);
                 }
             }
 
@@ -650,7 +684,7 @@ static void Ingame_Menu_Controls()
     int menu_x2 = gsGlobal->Width  * 0.75;
     int menu_y2 = gsGlobal->Height * 0.85 + FONT_HEIGHT;
 
-    int text_line = menu_y1 + 4;
+    int text_line = menu_y1 + FONT_HEIGHT * 2 + MENU_ITEMS_TOP_PADDING;
 
     char options[CONTROLS_N][32] = {
         { "< Back" },
@@ -700,16 +734,19 @@ static void Ingame_Menu_Controls()
 
             option_changed = 0;
 
+            menu_draw_dim_overlay();
             menu_primitive("Controls", &MENU_TEX, menu_x1, menu_y1, menu_x2, menu_y2);
 
             for (i = 0; i < CONTROLS_N; i++) {
+                int tx;
                 strcpy(options_buffer, options[i]);
                 strcat(options_buffer, options_state[i]);
+                tx = menu_text_center_x(options_buffer, menu_x1, menu_x2);
                 if (selection == i) {
-                    printXY(options_buffer, menu_x1+10, FONT_HEIGHT + text_line + i*FONT_HEIGHT, 4, FCEUSkin.highlight, 1, 0);
+                    menu_print_text(options_buffer, tx, FONT_HEIGHT + text_line + i * MENU_LINE_HEIGHT, 4, MENU_TEXT_HIGHLIGHT, 1);
                 }
                 else {
-                    printXY(options_buffer, menu_x1+10, FONT_HEIGHT + text_line + i*FONT_HEIGHT, 4, FCEUSkin.textcolor, 1, 0);
+                    menu_print_text(options_buffer, tx, FONT_HEIGHT + text_line + i * MENU_LINE_HEIGHT, 4, MENU_TEXT_NORMAL, 1);
                 }
             }
 
