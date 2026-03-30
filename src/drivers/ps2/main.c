@@ -1087,6 +1087,20 @@ void SND_ReapplyAudsrvFormat(void)
 #endif
 }
 
+void PS2_SuspendEmuAudio(void)
+{
+#ifdef SOUND_ON
+    audsrv_stop_audio();
+#endif
+}
+
+void PS2_ResumeEmuAudio(void)
+{
+#ifdef SOUND_ON
+    SND_ReapplyAudsrvFormat();
+#endif
+}
+
 static void SND_Init()
 {
 #ifdef SOUND_ON

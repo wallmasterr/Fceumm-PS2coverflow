@@ -553,11 +553,15 @@ void Ingame_Menu()
                     SetupNESGS();
                     return;
                 case 1:
+                    PS2_SuspendEmuAudio();
                     FCEUI_SaveState(NULL);
+                    PS2_ResumeEmuAudio();
                     SetupNESGS();
                     return;
                 case 2:
+                    PS2_SuspendEmuAudio();
                     FCEUI_LoadState(NULL);
+                    PS2_ResumeEmuAudio();
                     SetupNESGS();
                     return;
                 case 3:

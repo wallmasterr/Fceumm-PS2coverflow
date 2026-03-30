@@ -65,6 +65,9 @@ void PS2_BeginExitToSelectFadeIfRequested(void);
 
 int SND_GetOutputSampleRate(void);
 void SND_ReapplyAudsrvFormat(void);
+/* Mute NES output during blocking save-state I/O (reduces stutter). */
+void PS2_SuspendEmuAudio(void);
+void PS2_ResumeEmuAudio(void);
 void PS2_SfxInit(const char *elf_dir);
 void PS2_SfxPreload(void);
 /* Call when entering cover flow (clears residual emu audio in audsrv ring). */

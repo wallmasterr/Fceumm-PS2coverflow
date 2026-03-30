@@ -1,6 +1,67 @@
 #include <stdio.h>
+#include <string.h>
+#ifdef __PS2__
+#include <errno.h>
+#include <sys/stat.h>
+#endif
 #include "../../fceu-types.h"
 #include "../../driver.h"
+
+#ifdef __PS2__
+/*
+ * FCEU writes battery saves under <base>/sav/, save states under <base>/fcs/, etc.
+ * Those subdirectories are not created automatically; fopen(..., "wb") fails if missing.
+ */
+static void ps2_mkdir_chain(const char *dirpath)
+{
+	char buf[2048];
+	const char *post;
+	char *p;
+	size_t n;
+
+	n = strlen(dirpath);
+	if (n == 0 || n >= sizeof buf)
+		return;
+	memcpy(buf, dirpath, n);
+	buf[n] = '\0';
+
+	post = strstr(buf, ":/");
+	if (post)
+		post += 2;
+	else
+		post = buf;
+
+	for (p = (char *)post; *p; p++) {
+		if (*p == '/') {
+			*p = '\0';
+			if (buf[0] && mkdir(buf, 0777) != 0 && errno != EEXIST)
+				(void)0;
+			*p = '/';
+		}
+	}
+	if (buf[0] && mkdir(buf, 0777) != 0 && errno != EEXIST)
+		(void)0;
+}
+
+static void ps2_ensure_parent_dir(const char *filepath)
+{
+	char buf[2048];
+	char *p;
+	size_t n;
+
+	n = strlen(filepath);
+	if (n == 0 || n >= sizeof buf)
+		return;
+	memcpy(buf, filepath, n);
+	buf[n] = '\0';
+
+	p = strrchr(buf, '/');
+	if (!p || p == buf)
+		return;
+	*p = '\0';
+	ps2_mkdir_chain(buf);
+}
+#endif
 
 struct pcpal {
     unsigned char r;
@@ -12,7 +73,11 @@ struct pcpal {
 // Main
 FILE *FCEUD_UTF8fopen(const char *fn, const char *mode)
 {
-    return(fopen(fn, mode));
+#ifdef __PS2__
+	if (fn && mode && (strchr(mode, 'w') || strchr(mode, 'a') || strchr(mode, '+')))
+		ps2_ensure_parent_dir(fn);
+#endif
+	return fopen(fn, mode);
 }
 
 // Functions to display messages differently
