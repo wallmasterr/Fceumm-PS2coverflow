@@ -654,6 +654,7 @@ int main(int argc, char *argv[])
     }
 
     strcpy(elf_rom_dir, boot_path);
+    PS2_SfxInit(elf_rom_dir);
 
     Default_Global_CNF();
     Load_Global_CNF(boot_path);
@@ -698,6 +699,7 @@ int main(int argc, char *argv[])
 //    totallines = erendline - srendline + 1;
 
     SND_Init();
+    PS2_SfxPreload();
 
     // Main emulation loop
     for (;;) {
@@ -907,34 +909,20 @@ void SetupNESClut()
     }
 }
 
-void SetupNESGS()
+/* Shared with RenderFrame exit-to-select fade (RGB modulation m; 0x80 = full brightness). */
+static void main_blit_nes_frame(u8 m)
 {
     uint8 r, g, b;
     int v1, v2, y1, y2;
-    gsGlobal->DrawOrder = GS_OS_PER;
-    gsKit_mode_switch(gsGlobal, GS_PERSISTENT);
-    gsKit_queue_reset(gsGlobal->Per_Queue);
+    int offsetX = 0, width = gsGlobal->Width;
 
-    if (Settings.filter) {
-        NES_TEX.Filter = GS_FILTER_LINEAR;
-    }
-    else {
-        NES_TEX.Filter = GS_FILTER_NEAREST;
-    }
-
-//    gsKit_clear(gsGlobal, GS_SETREG_RGBA(0x00, 0x00, 0x00, 0x00));
     FCEUD_GetPalette(0, &r, &g, &b);
-//    r =  (NesPalette[ 0 ] & 0xff0000)>>16;
-//    g =  (NesPalette[ 0 ] & 0xff00  )>> 8;
-//    b =  (NesPalette[ 0 ] & 0xff    )<< 0;
 
     gsKit_clear(gsGlobal, GS_SETREG_RGBA(r, g, b, 0x00));
     y1 = 0;
     v1 = 0;
-    y2 = NES_TEX.Height*2;
+    y2 = NES_TEX.Height * 2;
     v2 = NES_TEX.Height;
-
-    int offsetX = 0, width = gsGlobal->Width;
 
     if (gsGlobal->Mode == GS_MODE_NTSC) {
         v1 = 8;
@@ -942,8 +930,8 @@ void SetupNESGS()
         y2 = (NES_TEX.Height - 16);
 
         if (Settings.aspect_ratio == 1) {
-            int newWidth = (width * 3 / 4) * 256 / 224;  // 548 if width = 640
-            offsetX = (width - newWidth) / 2; // (640 - 548) / 2
+            int newWidth = (width * 3 / 4) * 256 / 224;  /* 548 if width = 640 */
+            offsetX = (width - newWidth) / 2;
             width = newWidth;
         }
     }
@@ -968,45 +956,56 @@ void SetupNESGS()
         }
     }
     if (gsGlobal->Interlace == GS_INTERLACED && (gsGlobal->Mode == GS_MODE_NTSC || gsGlobal->Mode == GS_MODE_PAL))
-        y2 = y2*2;
-    //gsKit_prim_sprite_striped_texture(gsGlobal, &NES_TEX,  // Thought this might be needed for different modes, but it just looks bad
+        y2 = y2 * 2;
 
     gsKit_prim_sprite_texture(gsGlobal, &NES_TEX,
-        0 + offsetX,                           /* X1 */
-        y1,                                    /* Y1 */
-        0,                                     /* U1 */
-        v1,                                    /* V1 */
-        width + offsetX,                       /* X2 */ // Stretch to screen width
-        y2,                                    /* Y2 */ // Stretch to screen height
-        NES_TEX.Width,                         /* U2 */
-        v2,                                    /* V2 */
-        2,                                     /* Z  */
-        GS_SETREG_RGBA(0x80, 0x80, 0x80, 0x00) /* RGBA */
-    );
+        0 + offsetX,
+        y1,
+        0,
+        v1,
+        width + offsetX,
+        y2,
+        NES_TEX.Width,
+        v2,
+        2,
+        GS_SETREG_RGBA(m, m, m, 0x00));
+}
+
+void SetupNESGS()
+{
+    gsGlobal->DrawOrder = GS_OS_PER;
+    gsKit_mode_switch(gsGlobal, GS_PERSISTENT);
+    gsKit_queue_reset(gsGlobal->Per_Queue);
+
+    if (Settings.filter) {
+        NES_TEX.Filter = GS_FILTER_LINEAR;
+    }
+    else {
+        NES_TEX.Filter = GS_FILTER_NEAREST;
+    }
+
+    main_blit_nes_frame(0x80);
 }
 
 void RenderFrame(const uint8 *frame)
 {
-    //int w, h, c;
-    //int i;
-
-/*
-    for (h = 0; h < 240; h++) { // Correctly displays 256x240 nes screen
-        for (w = 0; w < 256; w++) {
-            c = (h << 8) + w; // Color index, increments height by 256, then adds width
-            NES_TEX.Mem[c] = ps2palette[frame[c]];
-        }
-    }
-*/
-    NES_TEX.Mem = (u32 *)frame; // Set frame as NES_TEX.Mem location
-
+    NES_TEX.Mem = (u32 *)frame;
     gsKit_texture_upload(gsGlobal, &NES_TEX);
 
-    // Don't swap these lines
-    /* vsync and flip buffer */
-    gsKit_sync_flip(gsGlobal);
+    if (exit_to_select_fade >= 0) {
+        float t = (PS2_EXIT_TO_SELECT_FADE_FRAMES > 1)
+            ? (float)exit_to_select_fade / (float)(PS2_EXIT_TO_SELECT_FADE_FRAMES - 1)
+            : 1.0f;
+        u8 m = (u8)(128.0f * (1.0f - t * 0.98f));
+        gsKit_mode_switch(gsGlobal, GS_ONESHOT);
+        gsKit_queue_reset(gsGlobal->Os_Queue);
+        main_blit_nes_frame(m);
+        gsKit_sync_flip(gsGlobal);
+        gsKit_queue_exec(gsGlobal);
+        return;
+    }
 
-    /* execute render queue */
+    gsKit_sync_flip(gsGlobal);
     gsKit_queue_exec(gsGlobal);
 }
 
@@ -1045,6 +1044,7 @@ void inline OutputSound(const int32 *tmpsnd, int32 ssize)
 
 void FCEUD_Update(const uint8 *XBuf, const int32 *tmpsnd, int32 ssize)
 {
+    PS2_BeginExitToSelectFadeIfRequested();
     RenderFrame(XBuf);
 #ifdef SOUND_ON
     OutputSound(tmpsnd, ssize);
@@ -1065,6 +1065,28 @@ static void DoFun()
     FCEUD_Update(gfx, sound, ssize);
 }
 
+int SND_GetOutputSampleRate(void)
+{
+    int f = SND_sampleRates[Settings.sound];
+
+    if (f <= 0)
+        f = 44100;
+    return f;
+}
+
+void SND_ReapplyAudsrvFormat(void)
+{
+#ifdef SOUND_ON
+    struct audsrv_fmt_t format;
+
+    format.bits = 16;
+    format.freq = SND_GetOutputSampleRate();
+    format.channels = 1;
+    audsrv_set_format(&format);
+    audsrv_set_volume(MAX_VOLUME);
+#endif
+}
+
 static void SND_Init()
 {
 #ifdef SOUND_ON
@@ -1082,14 +1104,9 @@ static void SND_Init()
     Settings.sound = 0;
 #endif
     FCEUI_Sound(SND_sampleRates[Settings.sound]);
-    
+
 #ifdef SOUND_ON
-    struct audsrv_fmt_t format;
-    format.bits = 16;
-    format.freq = SND_sampleRates[Settings.sound];
-    format.channels = 1;
-    audsrv_set_format(&format);
-    audsrv_set_volume(MAX_VOLUME);
+    SND_ReapplyAudsrvFormat();
     /* Flush any garbage in the driver before first frame (autoload skips browser/menu). */
     audsrv_stop_audio();
 #endif

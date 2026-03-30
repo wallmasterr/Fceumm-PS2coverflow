@@ -33,6 +33,7 @@ extern u32 old_pad[4];
 #define CF_Z_FG 2
 #define CF_Z_SLOT_BASE 10
 #define CF_VIEW_LERP 0.20f
+#define CF_ENTRY_FADE_FRAMES 22
 #define CF_EDGE_FADE_PX 120.0f
 #define CF_SLOT_K_MIN (-3)
 #define CF_SLOT_K_MAX 3
@@ -46,6 +47,8 @@ typedef struct {
 } CF_Item;
 
 static struct padButtonStatus cf_buttons;
+static int cf_stick_l_held;
+static int cf_stick_r_held;
 
 static void cf_join(char *out, size_t outsz, const char *dir, const char *name)
 {
@@ -104,6 +107,8 @@ static int cf_cmp_item(const void *a, const void *b)
 static void cf_pad_reset(void)
 {
 	old_pad[0] = 0xFFFF;
+	cf_stick_l_held = 0;
+	cf_stick_r_held = 0;
 }
 
 static inline int cf_wrap_i(int i, int n)
@@ -165,6 +170,23 @@ static int cf_pad_update(u32 *new_pad_out)
 
 	paddata = 0xFFFF ^ cf_buttons.btns;
 	new_pad = paddata & ~old_pad[0];
+
+	if (((cf_buttons.mode >> 4) == 0x07)) {
+		/* Hysteresis: avoid rapid leave/enter at thresholds (heard as double click). */
+		int sl = cf_stick_l_held ? (cf_buttons.ljoy_h < 96) : (cf_buttons.ljoy_h < 64);
+		int sr = cf_stick_r_held ? (cf_buttons.ljoy_h > 160) : (cf_buttons.ljoy_h > 192);
+
+		if (sl && !cf_stick_l_held)
+			new_pad |= PAD_LEFT;
+		if (sr && !cf_stick_r_held)
+			new_pad |= PAD_RIGHT;
+		cf_stick_l_held = sl;
+		cf_stick_r_held = sr;
+	} else {
+		cf_stick_l_held = 0;
+		cf_stick_r_held = 0;
+	}
+
 	old_pad[0] = paddata;
 	*new_pad_out = new_pad;
 	return 1;
@@ -216,7 +238,7 @@ static int cf_load_foreground(GSGLOBAL *gs, GSTEXTURE *fg, const char *img_dir)
 	return 0;
 }
 
-static void cf_draw_fg_with_alpha(GSTEXTURE *fg)
+static void cf_draw_fg_with_alpha_mod(GSTEXTURE *fg, u8 mod)
 {
 	u64 old_alpha;
 	u8 old_pabe;
@@ -228,7 +250,7 @@ static void cf_draw_fg_with_alpha(GSTEXTURE *fg)
 		0.0f, 0.0f, 0.0f, 0.0f,
 		(float)gsGlobal->Width, (float)gsGlobal->Height,
 		(float)fg->Width, (float)fg->Height, CF_Z_FG,
-		GS_SETREG_RGBA(0x80, 0x80, 0x80, 0x00));
+		GS_SETREG_RGBA(mod, mod, mod, 0x00));
 	gsKit_set_primalpha(gsGlobal, old_alpha, old_pabe);
 }
 
@@ -351,6 +373,7 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 	fg_ok = cf_load_foreground(gsGlobal, &fg, img_dir);
 
 	cf_pad_reset();
+	PS2_SfxCarouselEnter();
 
 	gsKit_mode_switch(gsGlobal, GS_ONESHOT);
 	gsKit_queue_reset(gsGlobal->Os_Queue);
@@ -358,6 +381,7 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 
 	{
 		float view_f = (float)sel;
+		int entry_f = 0;
 
 		for (;;) {
 			float cx = (float)gsGlobal->Width * 0.5f;
@@ -367,18 +391,33 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 			float t;
 			int ci;
 			int k;
+			float entry_dark = 0.f;
+			float intro_slot_mul;
+			u8 m_scene;
+
+			if (entry_f < CF_ENTRY_FADE_FRAMES) {
+				entry_dark = (CF_ENTRY_FADE_FRAMES > 1)
+					? (1.0f - (float)entry_f / (float)(CF_ENTRY_FADE_FRAMES - 1))
+					: 0.f;
+				entry_f++;
+			}
+			m_scene = (u8)(0x80 * (1.0f - entry_dark * 0.98f));
+			intro_slot_mul = 1.0f - entry_dark * 0.92f;
 
 			new_pad = 0;
 			had_pad = cf_pad_update(&new_pad);
 
 			if (had_pad) {
-				if (new_pad & PAD_TRIANGLE)
+				if (new_pad & PAD_TRIANGLE) {
 					break;
+				}
 				if (new_pad & PAD_L1)
 					show_build ^= 1;
 				if (new_pad & PAD_CROSS) {
 					int af;
 					const int anim_frames = 44;
+
+					PS2_SfxMenuSelect();
 					strncpy(out_path, items[sel].nes_path, outsz - 1);
 					out_path[outsz - 1] = '\0';
 					/* Launch transition:
@@ -411,7 +450,7 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 								GS_SETREG_RGBA(m_scene, m_scene, m_scene, 0x00));
 						}
 						if (fg_ok)
-							cf_draw_fg_with_alpha(&fg);
+							cf_draw_fg_with_alpha_mod(&fg, m_scene);
 
 						center_floor = floorf(view_f);
 						t = view_f - center_floor;
@@ -449,19 +488,27 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 							CF_Z_SLOT_BASE + 15, fmaxf(0.0f, 1.0f - dark * 0.98f));
 
 						DrawScreen(gsGlobal);
+						PS2_SfxTick();
 					}
 					cf_release_textures(items, nitems, &bg, &fg);
 					return 1;
 				}
 				if (new_pad & PAD_LEFT) {
+					int prev = sel;
+
 					sel--;
 					if (sel < 0)
 						sel = nitems - 1;
-				}
-				if (new_pad & PAD_RIGHT) {
+					if (nitems > 1 && prev != sel)
+						PS2_SfxCarouselClick();
+				} else if (new_pad & PAD_RIGHT) {
+					int prev = sel;
+
 					sel++;
 					if (sel >= nitems)
 						sel = 0;
+					if (nitems > 1 && prev != sel)
+						PS2_SfxCarouselClick();
 				}
 			}
 
@@ -482,11 +529,11 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 					0.0f, 0.0f, 0.0f, 0.0f,
 					(float)gsGlobal->Width, (float)gsGlobal->Height,
 					(float)bg.Width, (float)bg.Height, CF_Z_BG,
-					GS_SETREG_RGBA(0x80, 0x80, 0x80, 0x00));
+					GS_SETREG_RGBA(m_scene, m_scene, m_scene, 0x00));
 			}
 
 			if (fg_ok)
-				cf_draw_fg_with_alpha(&fg);
+				cf_draw_fg_with_alpha_mod(&fg, m_scene);
 
 			center_floor = floorf(view_f);
 			t = view_f - center_floor;
@@ -494,7 +541,7 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 
 			if (nitems <= 1) {
 				cf_draw_slot(&items[0], cx, cy, CF_SCALE_CENTER,
-					CF_Z_SLOT_BASE + 8, 1.f);
+					CF_Z_SLOT_BASE + 8, intro_slot_mul);
 			} else {
 				for (k = CF_SLOT_K_MIN; k <= CF_SLOT_K_MAX; k++) {
 					float xOff = (float)k - t;
@@ -507,7 +554,7 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 					float hw = CF_BASE_HEIGHT * scale * 0.55f;
 					float edge_f = cf_edge_alpha(slot_cx, hw, gsGlobal->Width);
 					float depth_f = fmaxf(0.35f, 1.f - adist * 0.22f);
-					float fade = edge_f * depth_f;
+					float fade = edge_f * depth_f * intro_slot_mul;
 
 					if (fade < 0.02f)
 						continue;
@@ -529,6 +576,7 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 			}
 
 			DrawScreen(gsGlobal);
+			PS2_SfxTick();
 		}
 	}
 

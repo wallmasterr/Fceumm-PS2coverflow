@@ -58,6 +58,22 @@ int printXY(const char *s, int x, int y, int z, u64 colour, int draw, int space)
 void RunLoaderElf(char *filename, char *party);
 char* Browser(int files_too, int menu_id);
 int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir);
+
+#define PS2_EXIT_TO_SELECT_FADE_FRAMES 28
+extern int exit_to_select_fade;
+void PS2_BeginExitToSelectFadeIfRequested(void);
+
+int SND_GetOutputSampleRate(void);
+void SND_ReapplyAudsrvFormat(void);
+void PS2_SfxInit(const char *elf_dir);
+void PS2_SfxPreload(void);
+/* Call when entering cover flow (clears residual emu audio in audsrv ring). */
+void PS2_SfxCarouselEnter(void);
+void PS2_SfxCarouselClick(void);
+void PS2_SfxMenuClick(void);
+void PS2_SfxMenuSelect(void);
+/* Call once per frame while UI SFX may be playing (stops after clip duration). */
+void PS2_SfxTick(void);
 void menu_background(float x1, float y1, float x2, float y2, int z);
 void menu_primitive(char *title, GSTEXTURE *gsTexture, float x1, float y1, float x2, float y2);
 void browser_primitive(char *title1, char *title2, GSTEXTURE *gsTexture, float x1, float y1, float x2, float y2);

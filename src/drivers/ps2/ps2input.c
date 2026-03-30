@@ -23,6 +23,7 @@ static int rapid_a[4] = { 0 };
 static int rapid_b[4] = { 0 };
 
 u8 exitgame = 0;
+int exit_to_select_fade = -1;
 u8 fdsswap = 0;
 static int NESButtons;
 static struct padButtonStatus buttons[4];
@@ -284,13 +285,26 @@ void Set_NESInput()
     FCEUI_SetInput(1, SI_GAMEPAD, &NESButtons, attrib);
 }
 
-int Get_NESInput()
+void PS2_BeginExitToSelectFadeIfRequested(void)
 {
     if (exitgame) {
         exitgame = 0;
-        return 1;
+        exit_to_select_fade = 0;
     }
-    
+}
+
+int Get_NESInput()
+{
+    if (exit_to_select_fade >= 0) {
+        int cur = exit_to_select_fade;
+        if (cur >= PS2_EXIT_TO_SELECT_FADE_FRAMES - 1) {
+            exit_to_select_fade = -1;
+            return 1;
+        }
+        exit_to_select_fade++;
+        return 0;
+    }
+
     NESButtons  = ( Get_PS2Input(0) << 0); // First player
     NESButtons |= ( Get_PS2Input(1) << 8); // Second player
     if (mtapGetConnectionCached == 1) {

@@ -706,6 +706,7 @@ char* Browser(int files_too, int menu_id)
             }
 
             DrawScreen(gsGlobal);
+            PS2_SfxTick();
 
         }
 
