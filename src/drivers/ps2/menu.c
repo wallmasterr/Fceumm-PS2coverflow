@@ -56,7 +56,7 @@ static const u64 MENU_TEXT_NORMAL = GS_SETREG_RGBA(0x00, 0x00, 0x00, 0x00);
 static const u64 MENU_TEXT_HIGHLIGHT = GS_SETREG_RGBA(0xff, 0xff, 0xff, 0x00);
 static const int MENU_TITLE_TOP_PADDING = 10;
 static const int MENU_ITEMS_TOP_PADDING = 10;
-static const int MENU_LINE_HEIGHT = FONT_HEIGHT + 2;
+#define MENU_LINE_HEIGHT (16 + 2)
 
 static int menu_text_center_x(const char *s, float x1, float x2)
 {

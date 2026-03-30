@@ -638,16 +638,18 @@ int main(int argc, char *argv[])
         *(p+1) = 0;
     // The above cuts away the ELF filename from argv[0], leaving a pure path
     if (!strncmp(boot_path, "hdd0:", 5)) {
+        char boot_src[256];
         char hdd_path[256];
         char *t;
-        sprintf(hdd_path, "%s", boot_path+5);
+        snprintf(boot_src, sizeof boot_src, "%s", boot_path);
+        snprintf(hdd_path, sizeof hdd_path, "%s", boot_src + 5);
         t = strchr(hdd_path, ':');
         if (t != NULL)
             *t = 0;
         //hdd0:HDDPATH:pfs:PFSPATH
-        sprintf(boot_path, "hdd0:/%s%s", hdd_path, boot_path+5+strlen(hdd_path)+5); //
+        snprintf(boot_path, sizeof boot_path, "hdd0:/%s%s", hdd_path, boot_src + 5 + strlen(hdd_path) + 5);
         if (boot_path[5+1+strlen(hdd_path)] != '/')
-            sprintf(boot_path, "hdd0:/%s/", hdd_path);
+            snprintf(boot_path, sizeof boot_path, "hdd0:/%s/", hdd_path);
         //hdd0:/HDDPATHPFSPATH
     }
 
