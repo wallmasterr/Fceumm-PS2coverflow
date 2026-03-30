@@ -68,6 +68,9 @@ void SND_ReapplyAudsrvFormat(void);
 /* Mute NES output during blocking save-state I/O (reduces stutter). */
 void PS2_SuspendEmuAudio(void);
 void PS2_ResumeEmuAudio(void);
+/* Composite msg onto last frame and flip before blocking savestate I/O. for_ingame_menu=1 if gsKit is in menu ONESHOT path. */
+void PS2_ShowSaveStateBusyMessageAndFlip(const char *msg, int for_ingame_menu);
+void PS2_HideSaveStateBusyMessageAndFlip(int for_ingame_menu);
 void PS2_SfxInit(const char *elf_dir);
 void PS2_SfxPreload(void);
 /* Call when entering cover flow (clears residual emu audio in audsrv ring). */

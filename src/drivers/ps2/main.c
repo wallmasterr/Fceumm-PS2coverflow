@@ -6,6 +6,8 @@
 // FCEUltra headers
 #include "../../driver.h"
 #include "../../fceu-types.h"
+#include "../../fceu.h"
+#include "../../video.h"
 
 #include "ps2fceu.h"
 #include "build_stamp.h"
@@ -969,6 +971,73 @@ static void main_blit_nes_frame(u8 m)
         v2,
         2,
         GS_SETREG_RGBA(m, m, m, 0x00));
+}
+
+static void PS2_present_uploaded_nes_frame(int for_ingame_menu)
+{
+	u8 m;
+
+	if (!gsGlobal)
+		return;
+
+	if (for_ingame_menu) {
+		gsKit_mode_switch(gsGlobal, GS_ONESHOT);
+		gsKit_queue_reset(gsGlobal->Os_Queue);
+		main_blit_nes_frame(0x80);
+		gsKit_sync_flip(gsGlobal);
+		gsKit_queue_exec(gsGlobal);
+		return;
+	}
+
+	if (exit_to_select_fade >= 0) {
+		float t = (PS2_EXIT_TO_SELECT_FADE_FRAMES > 1)
+			? (float)exit_to_select_fade / (float)(PS2_EXIT_TO_SELECT_FADE_FRAMES - 1)
+			: 1.0f;
+		m = (u8)(128.0f * (1.0f - t * 0.98f));
+		gsKit_mode_switch(gsGlobal, GS_ONESHOT);
+		gsKit_queue_reset(gsGlobal->Os_Queue);
+		main_blit_nes_frame(m);
+		gsKit_sync_flip(gsGlobal);
+		gsKit_queue_exec(gsGlobal);
+		return;
+	}
+
+	gsKit_sync_flip(gsGlobal);
+	gsKit_queue_exec(gsGlobal);
+}
+
+void PS2_ShowSaveStateBusyMessageAndFlip(const char *msg, int for_ingame_menu)
+{
+	if (!msg || !XBuf || !gsGlobal)
+		return;
+
+	FCEU_ResetMessages();
+	/* Hides slot row (rounded capsule graphics), not only the text bar. */
+	FCEUI_SelectState(-1);
+	FCEU_DispMessage("%s", msg);
+	FCEU_PutImage();
+
+	NES_TEX.Mem = (u32 *)XBuf;
+	gsKit_texture_upload(gsGlobal, &NES_TEX);
+	PS2_present_uploaded_nes_frame(for_ingame_menu);
+}
+
+void PS2_HideSaveStateBusyMessageAndFlip(int for_ingame_menu)
+{
+	uint8 *gfx;
+	int32 *sound;
+	int32 ssize;
+
+	if (!gsGlobal || !CurGame)
+		return;
+
+	FCEU_ResetMessages();
+	FCEUI_SelectState(-1);
+	FCEUI_Emulate(&gfx, &sound, &ssize, 0);
+
+	NES_TEX.Mem = (u32 *)gfx;
+	gsKit_texture_upload(gsGlobal, &NES_TEX);
+	PS2_present_uploaded_nes_frame(for_ingame_menu);
 }
 
 void SetupNESGS()

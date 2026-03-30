@@ -276,9 +276,6 @@ void FCEUSS_Save(char *fname) {
 
 	SaveStateStatus[CurrentState] = 1;
 	fclose(st);
-#ifndef HAVE_MEMSTREAM
-	FCEU_DispMessage("State %d saved.", CurrentState);
-#endif
 }
 
 int FCEUSS_LoadFP(MEM_TYPE *st) {
@@ -333,10 +330,6 @@ int FCEUSS_Load(char *fname) {
 #endif
 
 	if (FCEUSS_LoadFP(st)) {
-#ifndef HAVE_MEMSTREAM
-		SaveStateStatus[CurrentState] = 1;
-		FCEU_DispMessage("State %d loaded.", CurrentState);
-#endif
 		SaveStateStatus[CurrentState] = 1;
 		fclose(st);
 		return(1);

@@ -1,15 +1,10 @@
 void DrawTextLineBG(uint8 *dest) {
 	int x, y;
-	static int otable[7] = { 81, 49, 30, 17, 8, 3, 0 };
-	for (y = 0; y < 14; y++) {
-		int offs;
 
-		if (y >= 7) offs = otable[13 - y];
-		else offs = otable[y];
-
-		for (x = offs; x < (256 - offs); x++)
+	/* Full-width flat bar (no curved otable). */
+	for (y = 0; y < 14; y++)
+		for (x = 0; x < 256; x++)
 			dest[y * 256 + x] = (dest[y * 256 + x] & 0x0f) | 0xC0;
-	}
 }
 
 static void DrawMessage(void) {

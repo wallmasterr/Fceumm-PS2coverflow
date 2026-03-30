@@ -184,16 +184,6 @@ static unsigned char Get_PS2Input(int mport)
         if (new_pad[mport] == Settings.PlayerInput[mport][0]) {
             Ingame_Menu();
         }
-        if (new_pad[mport] == Settings.PlayerInput[mport][1]) {
-            PS2_SuspendEmuAudio();
-            FCEUI_SaveState(NULL);
-            PS2_ResumeEmuAudio();
-        }
-        if (new_pad[mport] == Settings.PlayerInput[mport][2]) {
-            PS2_SuspendEmuAudio();
-            FCEUI_LoadState(NULL);
-            PS2_ResumeEmuAudio();
-        }
         if (new_pad[mport] == Settings.PlayerInput[mport][3]) { // FDS_Disk_Swap
             if (GameInfo->type == GIT_FDS) {
                 fdsswap ^= 1;

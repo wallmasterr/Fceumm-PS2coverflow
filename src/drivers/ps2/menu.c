@@ -475,7 +475,7 @@ extern void SetupNESGS();
 
 static void Ingame_Menu_Controls();
 
-#define INGAME_MENU_N 5
+#define INGAME_MENU_N 6
 #define INGAME_MENU_EXIT_I 0
 
 void Ingame_Menu()
@@ -497,6 +497,7 @@ void Ingame_Menu()
         { "Save State" },
         { "Load State" },
         { "Configure Input >" },
+        { "Reset Game" },
         { "To Game Select" },
     };
     char options_state[INGAME_MENU_N][64] = { { 0 } };
@@ -554,13 +555,17 @@ void Ingame_Menu()
                     return;
                 case 1:
                     PS2_SuspendEmuAudio();
+                    PS2_ShowSaveStateBusyMessageAndFlip("Saving", 1);
                     FCEUI_SaveState(NULL);
+                    PS2_HideSaveStateBusyMessageAndFlip(1);
                     PS2_ResumeEmuAudio();
                     SetupNESGS();
                     return;
                 case 2:
                     PS2_SuspendEmuAudio();
+                    PS2_ShowSaveStateBusyMessageAndFlip("Loading", 1);
                     FCEUI_LoadState(NULL);
+                    PS2_HideSaveStateBusyMessageAndFlip(1);
                     PS2_ResumeEmuAudio();
                     SetupNESGS();
                     return;
@@ -568,6 +573,10 @@ void Ingame_Menu()
                     Ingame_Menu_Controls();
                     break;
                 case 4:
+                    FCEUI_ResetNES();
+                    SetupNESGS();
+                    return;
+                case 5:
                     fdsswap = 0;
                     statenum = 0;
                     exitgame = 1;
