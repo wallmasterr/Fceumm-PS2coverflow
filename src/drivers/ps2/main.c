@@ -684,25 +684,6 @@ int main(int argc, char *argv[])
 
     reload_gui_textures_from_skin();
 
-    /* Boot splash — confirms Lowtek build is running; shows unique build ID */
-    {
-        char idline[48];
-        int i, spin;
-        u64 tc = FCEUSkin.textcolor ? FCEUSkin.textcolor : GS_SETREG_RGBA(0xff, 0xff, 0xff, 0xff);
-
-        gsKit_clear(gsGlobal, GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x00, 0x00));
-        printXY("LOWTEK GAMES", 72, 180, 3, tc, 1, 0);
-        snprintf(idline, sizeof idline, "build %s", LOWTEK_BUILD_ID);
-        printXY(idline, 72, 210, 3, tc, 1, 0);
-        printXY("FCE Ultra PS2", 72, 250, 3, tc, 1, 0);
-        DrawScreen(gsGlobal);
-        for (i = 0; i < 90; i++) {
-            spin = 0x40000;
-            while (spin--)
-                asm("nop\nnop\nnop\nnop");
-        }
-    }
-
     if (!(ret = FCEUI_Initialize())) { // Allocates all memory for FCEU* functions
         printf("FCEUltra did not initialize.\n");
         return 0;

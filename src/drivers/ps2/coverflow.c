@@ -293,6 +293,7 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 	int i, sel = 0;
 	int bg_ok = 0;
 	int fg_ok = 0;
+	int show_build = 0;
 	u32 new_pad;
 	int had_pad;
 
@@ -373,9 +374,82 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 			if (had_pad) {
 				if (new_pad & PAD_TRIANGLE)
 					break;
+				if (new_pad & PAD_L1)
+					show_build ^= 1;
 				if (new_pad & PAD_CROSS) {
+					int af;
+					const int anim_frames = 44;
 					strncpy(out_path, items[sel].nes_path, outsz - 1);
 					out_path[outsz - 1] = '\0';
+					/* Launch transition:
+					 * - selected cover hops up briefly
+					 * - then drops off-screen
+					 * - whole scene fades to black */
+					for (af = 0; af < anim_frames; af++) {
+						float cx_a = (float)gsGlobal->Width * 0.5f;
+						float cy_a = (float)gsGlobal->Height * 0.52f + CF_CAROUSEL_Y_OFFSET;
+						float tA = (float)af / (float)(anim_frames - 1);
+						float hop = 0.0f;
+						float y_anim;
+						float dark = tA;
+						/* Darken via RGB modulation only — untextured black sprite + vertex A
+						 * does not blend on GS without a specific alpha path, so it was solid
+						 * black every frame and hid the hop/drop. */
+						u8 m_scene = (u8)(0x80 * (1.0f - dark * 0.98f));
+						int k;
+						float center_floor;
+						float t;
+						int ci;
+
+						gsKit_clear(gsGlobal, GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x00, 0x00));
+
+						if (bg_ok) {
+							gsKit_prim_sprite_texture(gsGlobal, &bg,
+								0.0f, 0.0f, 0.0f, 0.0f,
+								(float)gsGlobal->Width, (float)gsGlobal->Height,
+								(float)bg.Width, (float)bg.Height, CF_Z_BG,
+								GS_SETREG_RGBA(m_scene, m_scene, m_scene, 0x00));
+						}
+						if (fg_ok)
+							cf_draw_fg_with_alpha(&fg);
+
+						center_floor = floorf(view_f);
+						t = view_f - center_floor;
+						ci = (int)center_floor;
+						if (nitems > 1) {
+							for (k = CF_SLOT_K_MIN; k <= CF_SLOT_K_MAX; k++) {
+								float xOff = (float)k - t;
+								float slot_cx = cx_a + xOff * CF_SLOT_SPACING;
+								int idx = cf_wrap_i(ci + k, nitems);
+								float adist = fabsf(xOff);
+								float scale = CF_SCALE_SIDE + (CF_SCALE_CENTER - CF_SCALE_SIDE) *
+									fmaxf(0.f, 1.f - adist);
+								int z = CF_Z_SLOT_BASE + (int)(10.f - adist * 3.f);
+								float hw = CF_BASE_HEIGHT * scale * 0.55f;
+								float edge_f = cf_edge_alpha(slot_cx, hw, gsGlobal->Width);
+								float depth_f = fmaxf(0.35f, 1.f - adist * 0.22f);
+								float fade = edge_f * depth_f * (1.0f - dark * 0.9f);
+								if (idx == sel || fade < 0.02f)
+									continue;
+								if (z < CF_Z_SLOT_BASE)
+									z = CF_Z_SLOT_BASE;
+								cf_draw_slot(&items[idx], slot_cx, cy_a, scale, z, fade);
+							}
+						}
+
+						if (tA < 0.30f) {
+							float u = tA / 0.30f;
+							hop = -26.0f * sinf(u * 3.14159f);
+							y_anim = cy_a + hop;
+						} else {
+							float u = (tA - 0.30f) / 0.70f;
+							y_anim = cy_a + (float)gsGlobal->Height * (u * u * 1.20f);
+						}
+						cf_draw_slot(&items[sel], cx_a, y_anim, CF_SCALE_CENTER * (1.0f + 0.08f * (1.0f - dark)),
+							CF_Z_SLOT_BASE + 15, fmaxf(0.0f, 1.0f - dark * 0.98f));
+
+						DrawScreen(gsGlobal);
+					}
 					cf_release_textures(items, nitems, &bg, &fg);
 					return 1;
 				}
@@ -443,7 +517,7 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 				}
 			}
 
-			{
+			if (show_build) {
 				const char *bid = LOWTEK_BUILD_ID;
 				int text_w = (int)strlen(bid) * 8;
 				int bx = gsGlobal->Width - text_w - 12;
