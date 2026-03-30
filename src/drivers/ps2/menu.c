@@ -56,7 +56,7 @@ static const u64 MENU_TEXT_NORMAL = GS_SETREG_RGBA(0x00, 0x00, 0x00, 0x00);
 static const u64 MENU_TEXT_HIGHLIGHT = GS_SETREG_RGBA(0xff, 0xff, 0xff, 0x00);
 static const int MENU_TITLE_TOP_PADDING = 10;
 static const int MENU_ITEMS_TOP_PADDING = 10;
-#define MENU_LINE_HEIGHT (16 + 2)
+#define MENU_LINE_HEIGHT (16 + 6)
 
 static int menu_text_center_x(const char *s, float x1, float x2)
 {
@@ -135,7 +135,7 @@ void menu_primitive(char *title, GSTEXTURE *gsTexture, float x1, float y1, float
         menu_background(x1, y1, x2, y2, 1);
     }
     tx = menu_text_center_x(title, x1, x2);
-    menu_print_text(title, tx, y1 + MENU_TITLE_TOP_PADDING, 3, MENU_TEXT_NORMAL, 2);
+    menu_print_text(title, tx, y1 + MENU_TITLE_TOP_PADDING, 3, MENU_TEXT_HIGHLIGHT, 2);
 }
 
 void browser_primitive(char *title1, char *title2, GSTEXTURE *gsTexture, float x1, float y1, float x2, float y2)
@@ -147,8 +147,8 @@ void browser_primitive(char *title1, char *title2, GSTEXTURE *gsTexture, float x
     else {
         menu_background(x1, y1, x2, y2, 1);
     }
-    menu_print_text(title1, menu_text_center_x(title1, x1, x2), y1 + MENU_TITLE_TOP_PADDING, 3, MENU_TEXT_NORMAL, 2);
-    menu_print_text(title2, menu_text_center_x(title2, x1, x2), y1 + MENU_TITLE_TOP_PADDING + FONT_HEIGHT + 2, 3, MENU_TEXT_NORMAL, 2);
+    menu_print_text(title1, menu_text_center_x(title1, x1, x2), y1 + MENU_TITLE_TOP_PADDING, 3, MENU_TEXT_HIGHLIGHT, 2);
+    menu_print_text(title2, menu_text_center_x(title2, x1, x2), y1 + MENU_TITLE_TOP_PADDING + FONT_HEIGHT + 2, 3, MENU_TEXT_HIGHLIGHT, 2);
 }
 
 static int menu_input(int port, int center_screen)
@@ -208,6 +208,7 @@ static int menu_input(int port, int center_screen)
             selected = 1;
         }
         if (new_pad[port] & PAD_CIRCLE) {
+            selected = 2;
         }
         if ((new_pad[port] == Settings.PlayerInput[port][0]
           || new_pad[port] == PAD_TRIANGLE) && !center_screen) {
@@ -474,8 +475,8 @@ extern void SetupNESGS();
 
 static void Ingame_Menu_Controls();
 
-#define INGAME_MENU_N 7
-#define INGAME_MENU_EXIT_I 5
+#define INGAME_MENU_N 5
+#define INGAME_MENU_EXIT_I 0
 
 void Ingame_Menu()
 {
@@ -492,24 +493,14 @@ void Ingame_Menu()
     int text_line = menu_y1 + FONT_HEIGHT * 2 + MENU_ITEMS_TOP_PADDING;
 
     char options[INGAME_MENU_N][32] = {
-        { "State number: " },
+        { "Resume" },
         { "Save State" },
         { "Load State" },
         { "Configure Input >" },
-        { "Reset Game" },
-        { "Exit Menu" },
-        { "Exit Game" },
+        { "To Game Select" },
     };
     char options_state[INGAME_MENU_N][64] = { { 0 } };
     char options_buffer[32+64] = { 0 };
-
-    for (i = 0; i < INGAME_MENU_N; i++) {
-        switch (i) {
-            case 0:
-                sprintf(options_state[i], "%d", statenum);
-                break;
-        }
-    }
 
 #ifdef SOUND_ON
     audsrv_stop_audio();
@@ -558,13 +549,9 @@ void Ingame_Menu()
             }
             i = selection;
             switch (i) {
-                case 0: // State Number
-                    statenum++;
-                    if (statenum >= 10) { statenum = 0; }
-                    sprintf(options_state[i], "%d", statenum);
-                    FCEUI_SelectState(statenum);
-                    option_changed = 1;
-                    break;
+                case 0:
+                    SetupNESGS();
+                    return;
                 case 1:
                     FCEUI_SaveState(NULL);
                     SetupNESGS();
@@ -577,13 +564,6 @@ void Ingame_Menu()
                     Ingame_Menu_Controls();
                     break;
                 case 4:
-                    FCEUI_ResetNES();
-                    SetupNESGS();
-                    return;
-                case 5:
-                    SetupNESGS();
-                    return;
-                case 6:
                     fdsswap = 0;
                     statenum = 0;
                     exitgame = 1;
