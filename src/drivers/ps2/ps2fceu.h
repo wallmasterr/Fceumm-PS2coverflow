@@ -48,6 +48,11 @@ void setupPS2Pad();
 
 void SetDisplayOffset();
 void DrawScreen(GSGLOBAL *gsGlobal);
+int PS2_LoadBootSplash(const char *elf_dir);
+int PS2_BootSplashReady(void);
+void PS2_ShowBootSplashNow(void);
+void PS2_DrawBootSplashCentered(u8 mod, int z);
+double PS2_GetBootToSplashSeconds(void);
 
 // Text related prototypes
 int loadFont(char *path_arg);

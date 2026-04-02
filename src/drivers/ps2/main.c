@@ -2,6 +2,7 @@
 #include <string.h>
 #include <malloc.h>
 #include <sys/stat.h>
+#include <time.h>
 
 // FCEUltra headers
 #include "../../driver.h"
@@ -607,6 +608,11 @@ static void SetupNESTexture();
        void SetupNESClut();
        void SetupNESGS();
 static void DoFun();
+static int  ui_sfx_preloaded;
+static GSTEXTURE boot_splash_tex;
+static int boot_splash_ok;
+static char boot_splash_loaded_path[512];
+static double boot_to_splash_seconds;
 /***********************************/
 /* Sound                           */
 /***********************************/
@@ -616,9 +622,152 @@ static void SND_Init();
        void SND_SetNextSampleRate();
         int SND_GetCurrSampleRate();
 
+static void ps2_free_gstexture_local(GSTEXTURE *t)
+{
+    if (t->Clut) {
+        free(t->Clut);
+        t->Clut = NULL;
+    }
+    if (t->Mem) {
+        free(t->Mem);
+        t->Mem = NULL;
+    }
+    memset(t, 0, sizeof *t);
+}
+
+int PS2_LoadBootSplash(const char *elf_dir)
+{
+    static const char *const names[] = {
+        "splash.jpg", "Splash.jpg", "SPLASH.JPG",
+        "splash.jpeg", "Splash.jpeg",
+        "splash.png", "Splash.png", "SPLASH.PNG"
+    };
+    static const char *const subdirs[] = { "", "images" };
+    int i;
+    int si;
+    int ok;
+    char base[512];
+    char full[512];
+    int trail;
+
+    if (boot_splash_ok && boot_splash_tex.Height > 0)
+        return 1;
+    if (!elf_dir || !elf_dir[0])
+        return 0;
+
+    trail = 0;
+    if (elf_dir[0]) {
+        size_t n = strlen(elf_dir);
+        if (n > 0 && (elf_dir[n - 1] == '/' || elf_dir[n - 1] == '\\'))
+            trail = 1;
+    }
+
+    for (si = 0; si < (int)(sizeof subdirs / sizeof subdirs[0]); si++) {
+        if (subdirs[si][0]) {
+            if (trail)
+                snprintf(base, sizeof base, "%s%s", elf_dir, subdirs[si]);
+            else
+                snprintf(base, sizeof base, "%s/%s", elf_dir, subdirs[si]);
+        } else {
+            snprintf(base, sizeof base, "%s", elf_dir);
+        }
+
+        trail = 0;
+        if (base[0]) {
+            size_t bn = strlen(base);
+            if (bn > 0 && (base[bn - 1] == '/' || base[bn - 1] == '\\'))
+                trail = 1;
+        }
+
+        for (i = 0; i < (int)(sizeof names / sizeof names[0]); i++) {
+            if (trail)
+                snprintf(full, sizeof full, "%s%s", base, names[i]);
+            else
+                snprintf(full, sizeof full, "%s/%s", base, names[i]);
+
+            memset(&boot_splash_tex, 0, sizeof boot_splash_tex);
+            ok = 0;
+            if (strstr(names[i], ".png") || strstr(names[i], ".PNG"))
+                ok = (gsKit_texture_png(gsGlobal, &boot_splash_tex, full) >= 0);
+            else
+                ok = (gsKit_texture_jpeg(gsGlobal, &boot_splash_tex, full) >= 0);
+
+            if (ok && boot_splash_tex.Width > 0 && boot_splash_tex.Height > 0) {
+                boot_splash_ok = 1;
+                snprintf(boot_splash_loaded_path, sizeof boot_splash_loaded_path, "%s", full);
+                printf("boot: splash loaded from %s (%dx%d)\n",
+                    boot_splash_loaded_path, boot_splash_tex.Width, boot_splash_tex.Height);
+                return 1;
+            }
+            ps2_free_gstexture_local(&boot_splash_tex);
+        }
+    }
+
+    boot_splash_ok = 0;
+    boot_splash_loaded_path[0] = '\0';
+    printf("boot: splash not found (looked in elf dir and elf dir/images)\n");
+    return 0;
+}
+
+int PS2_BootSplashReady(void)
+{
+    return boot_splash_ok && boot_splash_tex.Height > 0;
+}
+
+void PS2_DrawBootSplashCentered(u8 mod, int z)
+{
+    float sw, sh;
+    float dw, dh;
+    float x1, y1;
+
+    if (!PS2_BootSplashReady())
+        return;
+
+    sw = (float)gsGlobal->Width;
+    sh = (float)gsGlobal->Height;
+    dw = (float)boot_splash_tex.Width;
+    dh = (float)boot_splash_tex.Height;
+
+    if (dw > sw || dh > sh) {
+        float sx = sw / dw;
+        float sy = sh / dh;
+        float s = (sx < sy) ? sx : sy;
+        dw *= s;
+        dh *= s;
+    }
+
+    x1 = (sw - dw) * 0.5f;
+    y1 = (sh - dh) * 0.5f;
+
+    gsKit_prim_sprite_texture(gsGlobal, &boot_splash_tex,
+        x1, y1, 0.0f, 0.0f,
+        x1 + dw, y1 + dh,
+        (float)boot_splash_tex.Width, (float)boot_splash_tex.Height,
+        z, GS_SETREG_RGBA(mod, mod, mod, 0x00));
+}
+
+void PS2_ShowBootSplashNow(void)
+{
+    if (!PS2_BootSplashReady())
+        return;
+
+    gsKit_mode_switch(gsGlobal, GS_ONESHOT);
+    gsKit_queue_reset(gsGlobal->Os_Queue);
+    gsGlobal->DrawOrder = GS_PER_OS;
+    gsKit_clear(gsGlobal, GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x00, 0x00));
+    PS2_DrawBootSplashCentered(0x80, 8);
+    DrawScreen(gsGlobal);
+}
+
+double PS2_GetBootToSplashSeconds(void)
+{
+    return boot_to_splash_seconds;
+}
+
 int main(int argc, char *argv[])
 {
     int ret, sometime;
+    clock_t boot_t0;
     char *temp;
     char boot_path[256];
     char elf_rom_dir[256]; /* ELF folder; Load_Global_CNF() mutates boot_path (CNF path) */
@@ -627,6 +776,8 @@ int main(int argc, char *argv[])
     mpartitions[0][0] = 0;
     mpartitions[1][0] = 0;
     mpartitions[2][0] = 0;
+    boot_to_splash_seconds = 0.0;
+    boot_t0 = clock();
 
     // Setup PS2 here
     InitPS2();
@@ -670,6 +821,10 @@ int main(int argc, char *argv[])
 
     gsKit_init_screen(gsGlobal); // Initialize everything
     //init_custom_screen(); // Init user screen settings
+    (void)PS2_LoadBootSplash(elf_rom_dir);
+    PS2_ShowBootSplashNow();
+    boot_to_splash_seconds = (double)(clock() - boot_t0) / (double)CLOCKS_PER_SEC;
+    printf("boot: reached splash in %.2f s\n", boot_to_splash_seconds);
 
     loadFont(0);
 
@@ -700,18 +855,23 @@ int main(int argc, char *argv[])
 //    FCEUI_GetCurrentVidSystem(&srendline, &erendline);
 //    totallines = erendline - srendline + 1;
 
-    SND_Init();
-    PS2_SfxPreload();
-
     // Main emulation loop
     for (;;) {
         if (!autorom_boot_attempted) {
             autorom_boot_attempted = 1;
             if (!pick_auto_rom_path((char *)path, 4096, elf_rom_dir)) {
+                if (!ui_sfx_preloaded) {
+                    PS2_SfxPreload();
+                    ui_sfx_preloaded = 1;
+                }
                 if (!Coverflow_SelectRom((char *)path, 4096, elf_rom_dir))
                     strcpy((char *)path, Browser(1, 0));
             }
         } else {
+            if (!ui_sfx_preloaded) {
+                PS2_SfxPreload();
+                ui_sfx_preloaded = 1;
+            }
             if (!Coverflow_SelectRom((char *)path, 4096, elf_rom_dir))
                 strcpy((char *)path, Browser(1, 0));
         }

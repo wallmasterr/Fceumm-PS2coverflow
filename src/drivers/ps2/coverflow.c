@@ -49,6 +49,7 @@ typedef struct {
 static struct padButtonStatus cf_buttons;
 static int cf_stick_l_held;
 static int cf_stick_r_held;
+static int cf_boot_splash_consumed;
 
 static void cf_join(char *out, size_t outsz, const char *dir, const char *name)
 {
@@ -332,25 +333,55 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 	if (!d)
 		return 0;
 
-	while ((de = readdir(d)) != NULL && nitems < CF_MAX_ITEMS) {
-		char *name = de->d_name;
-		char stem[96];
-		size_t nl;
+	/* Two-pass scan: JPG/JPEG first, PNG fallback only when no JPG exists. */
+	for (i = 0; i < 2 && nitems < CF_MAX_ITEMS; i++) {
+		int jpg_pass = (i == 0);
+		rewinddir(d);
+		while ((de = readdir(d)) != NULL && nitems < CF_MAX_ITEMS) {
+			char *name = de->d_name;
+			char stem[96];
+			size_t nl;
+			size_t el = 0;
+			int is_png = cf_has_ext_ci(name, ".png");
+			int is_jpg = cf_has_ext_ci(name, ".jpg");
+			int is_jpeg = cf_has_ext_ci(name, ".jpeg");
+			int idx;
 
-		if (!cf_has_ext_ci(name, ".png"))
-			continue;
-		nl = strlen(name);
-		if (nl < 5)
-			continue;
-		memcpy(stem, name, nl - 4);
-		stem[nl - 4] = '\0';
-		if (strcasecmp(stem, "BG") == 0 || strcasecmp(stem, "FG") == 0)
-			continue;
-		if (!cf_find_nes(elf_dir, stem, items[nitems].nes_path, sizeof items[nitems].nes_path))
-			continue;
-		strncpy(items[nitems].stem, stem, sizeof items[nitems].stem - 1);
-		cf_join(items[nitems].png_path, sizeof items[nitems].png_path, img_dir, name);
-		nitems++;
+			if (jpg_pass) {
+				if (!(is_jpg || is_jpeg))
+					continue;
+			} else if (!is_png) {
+				continue;
+			}
+
+			if (is_jpeg)
+				el = 5;
+			else
+				el = 4;
+			nl = strlen(name);
+			if (nl <= el)
+				continue;
+			memcpy(stem, name, nl - el);
+			stem[nl - el] = '\0';
+			if (strcasecmp(stem, "BG") == 0 || strcasecmp(stem, "FG") == 0)
+				continue;
+
+			/* Skip fallback PNG when a JPG/JPEG already claimed this stem. */
+			idx = -1;
+			for (idx = 0; idx < nitems; idx++) {
+				if (strcasecmp(items[idx].stem, stem) == 0)
+					break;
+			}
+			if (idx < nitems)
+				continue;
+
+			if (!cf_find_nes(elf_dir, stem, items[nitems].nes_path, sizeof items[nitems].nes_path))
+				continue;
+
+			strncpy(items[nitems].stem, stem, sizeof items[nitems].stem - 1);
+			cf_join(items[nitems].png_path, sizeof items[nitems].png_path, img_dir, name);
+			nitems++;
+		}
 	}
 	closedir(d);
 
@@ -361,10 +392,17 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 
 	for (i = 0; i < nitems; i++) {
 		memset(&items[i].tex, 0, sizeof items[i].tex);
-		if (gsKit_texture_png(gsGlobal, &items[i].tex, items[i].png_path) >= 0)
-			items[i].tex_ok = 1;
-		else
-			items[i].tex_ok = 0;
+		if (cf_has_ext_ci(items[i].png_path, ".png")) {
+			if (gsKit_texture_png(gsGlobal, &items[i].tex, items[i].png_path) >= 0)
+				items[i].tex_ok = 1;
+			else
+				items[i].tex_ok = 0;
+		} else {
+			if (gsKit_texture_jpeg(gsGlobal, &items[i].tex, items[i].png_path) >= 0)
+				items[i].tex_ok = 1;
+			else
+				items[i].tex_ok = 0;
+		}
 	}
 
 	/* gsKit_texture_png/jpeg already upload to VRAM — do not call gsKit_texture_upload again
@@ -378,6 +416,20 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 	gsKit_mode_switch(gsGlobal, GS_ONESHOT);
 	gsKit_queue_reset(gsGlobal->Os_Queue);
 	gsGlobal->DrawOrder = GS_PER_OS;
+
+	/* Show boot splash fade only once per app boot. */
+	if (!cf_boot_splash_consumed && PS2_BootSplashReady()) {
+		int sf;
+		const int splash_fade_frames = 16;
+
+		for (sf = 0; sf < splash_fade_frames; sf++) {
+			u8 m = (u8)(0x80 * (1.0f - (float)sf / (float)(splash_fade_frames - 1)));
+			gsKit_clear(gsGlobal, GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x00, 0x00));
+			PS2_DrawBootSplashCentered(m, 8);
+			DrawScreen(gsGlobal);
+		}
+		cf_boot_splash_consumed = 1;
+	}
 
 	{
 		float view_f = (float)sel;
@@ -573,6 +625,21 @@ int Coverflow_SelectRom(char *out_path, size_t outsz, const char *elf_dir)
 					bx = 8;
 				printXY(bid, bx, by, 40,
 					FCEUSkin.textcolor ? FCEUSkin.textcolor : GS_SETREG_RGBA(0xc0, 0xc0, 0xc0, 0xff), 1, 0);
+			}
+
+			{
+				char splash_t[48];
+				int tw;
+				int tx;
+				double secs = PS2_GetBootToSplashSeconds();
+				u64 col = FCEUSkin.textcolor ? FCEUSkin.textcolor : GS_SETREG_RGBA(0xff, 0xff, 0xff, 0xff);
+
+				snprintf(splash_t, sizeof splash_t, "Splash: %.2fs", secs);
+				tw = (int)strlen(splash_t) * 8;
+				tx = gsGlobal->Width - tw - 12;
+				if (tx < 8)
+					tx = 8;
+				printXY(splash_t, tx, 10, 40, col, 1, 0);
 			}
 
 			DrawScreen(gsGlobal);
